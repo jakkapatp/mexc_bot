@@ -6,20 +6,16 @@ import pandas as pd
 import pandas_ta as ta
 from flask import Flask
 
-# --- ระบบเว็บหลอกให้ Render รันฟรีได้ตลอด 24 ชม. ---
+# --- ระบบ Web Server สำหรับ Render ---
 app = Flask(__name__)
 
 @app.route('/')
 def home():
     return "MEXC Bot is running 24/7!"
 
-def run_web():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-# --- ข้อมูล Telegram ---
+# --- ข้อมูล Telegram & Trading ---
 TELEGRAM_TOKEN = "8389657782:AAGYbKxFBC-GD1_BMMCOvS5GQ2bg8pnRSg4"
-CHAT_ID = "8876853259"  # ใส่ Chat ID ของพี่โด่ง
+CHAT_ID = "8876853259"
 SYMBOL = "ETH_USDT"
 
 def send_telegram(message):
@@ -80,8 +76,9 @@ def bot_loop():
         analyze_and_notify()
         time.sleep(60)
 
+# สั่งให้บอทเริ่มทำงานเบื้องหลังทันทีที่ Render โหลดไฟล์
+threading.Thread(target=bot_loop, daemon=True).start()
+
 if __name__ == "__main__":
-    # รันบอทแยกเป็น Background Thread
-    threading.Thread(target=bot_loop, daemon=True).start()
-    # เปิดหน้า Web Server ให้ Render ตรวจผ่าน
-    run_web()
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
