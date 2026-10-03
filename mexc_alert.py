@@ -76,18 +76,16 @@ def get_daily_change_pct(symbol):
     return 0.0
 
 def get_startup_message():
-    """สร้างข้อความเริ่มต้นพร้อมแสดง % รายวัน (แดงถ้าติดลบ, เขียวถ้าบวก/เท่ากับศูนย์)"""
+    """สร้างข้อความเริ่มต้นแสดง % รายวัน (สีเขียวสำหรับบวก, สีแดงสำหรับลบ)"""
     lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟแบบ Real-time คู่เทรดดังนี้</b>"]
     for s in SYMBOLS:
         clean_s = normalize_symbol(s)
         pct = get_daily_change_pct(clean_s)
         if pct < 0:
-            emoji_color = "🔴"
-            pct_str = f"{pct:.2f}%"
+            pct_str = f"🔴 {pct:.2f}%"
         else:
-            emoji_color = "🟢"
-            pct_str = f"+{pct:.2f}%" if pct > 0 else f"{pct:.2f}%"
-        lines.append(f"{clean_s}  {emoji_color} {pct_str}")
+            pct_str = f"🟢 +{pct:.2f}%" if pct > 0 else f"🟢 {pct:.2f}%"
+        lines.append(f"{clean_s}   {pct_str}")
     return "\n".join(lines)
 
 def analyze_symbol_data(symbol, interval):
@@ -225,7 +223,7 @@ def check_instant_long_signal(symbol):
 • SAR : {data['sar']:.2f} ⬆️
 • EMA 20 : {data['ema']:.2f} ⬆️
 • CCI 20 : {data['cci']:.2f} ⬆️
-• MACD : {data['macd']:.6f} ⬆️️
+• MACD : {data['macd']:.6f} ⬆️
 ---------------------------------
 💡 <i>ครบเงื่อนไขฝั่ง LONG ทั้ง 7 Indicator พร้อมเข้าออเดอร์ทันทีค่ะ!</i>
 <b>จุดเข้าซื้อ: ${data['price']:,.2f}</b>"""
