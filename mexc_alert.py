@@ -1,13 +1,26 @@
+import os
 import time
+import threading
 import requests
 import pandas as pd
 import pandas_ta as ta
+from flask import Flask
+
+# --- ระบบเว็บหลอกให้ Render รันฟรีได้ตลอด 24 ชม. ---
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "MEXC Bot is running 24/7!"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
 
 # --- ข้อมูล Telegram ---
 TELEGRAM_TOKEN = "8389657782:AAGYbKxFBC-GD1_BMMCOvS5GQ2bg8pnRSg4"
-CHAT_ID = "วาง_เลข_ID_ตรงนี้"  # เปลี่ยนตรงนี้เป็นเลข Id ที่ได้จาก @userinfobot
-
-SYMBOL = "ETH_USDT"  # เปลี่ยนคู่เหรียญที่ต้องการเฝ้าได้ เช่น "ONE_USDT"
+CHAT_ID = "วาง_CHAT_ID_ตรงนี้"  # ใส่ Chat ID ของพี่โด่ง
+SYMBOL = "ETH_USDT"
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -37,7 +50,6 @@ def analyze_and_notify():
     if df is None or len(df) < 30:
         return
 
-    # คำนวณ Indicator
     df['RSI'] = ta.rsi(df['close'], length=14)
     macd = ta.macd(df['close'])
     df['MACDh'] = macd['MACDh_12_26_9']
@@ -62,9 +74,14 @@ def analyze_and_notify():
 สัญญาณ: {signal}"""
         send_telegram(msg)
 
-print("เริ่มการทำงานของระบบเฝ้ากระดาน MEXC...")
-send_telegram(f"🚀 ระบบ AI เฝ้ากระดาน MEXC ({SYMBOL}) เริ่มทำงานแล้วค่ะ")
+def bot_loop():
+    send_telegram(f"🚀 ระบบ AI เฝ้ากระดาน MEXC ({SYMBOL}) เริ่มทำงานแล้วค่ะ")
+    while True:
+        analyze_and_notify()
+        time.sleep(60)
 
-while True:
-    analyze_and_notify()
-    time.sleep(60)
+if __name__ == "__main__":
+    # รันบอทแยกเป็น Background Thread
+    threading.Thread(target=bot_loop, daemon=True).start()
+    # เปิดหน้า Web Server ให้ Render ตรวจผ่าน
+    run_web()
