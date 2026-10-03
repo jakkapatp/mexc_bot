@@ -16,12 +16,12 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = "8389657702:AAGYbKxFBC-GD1_0MMCOvS5GQ2bg0pnRGg4"
 CHAT_ID = "8876853259"
 
-SYMBOLS = ["ETH_USDT", "DOGE_USDT", "XRP_USDT", "TRUMP_USDT", "ONE_USDT"]
+# รายชื่อคู่เหรียญเฝ้าระวัง
+SYMBOLS = ["ETH_USDT", "DOGE_USDT", "SOL_USDT", "XRP_USDT", "TRUMP_USDT", "ONE_USDT"]
 
 bot_started = False
 lock = threading.Lock()
 
-# ตัวแปรจำเวลาส่งแจ้งเตือน ป้องกันการส่งข้อความซ้ำซ้อน
 last_hourly_time = 0
 last_instant_alerts = {}  # {symbol: timestamp}
 
@@ -57,8 +57,40 @@ def fetch_mexc_kline(symbol, interval):
         print(f"[MEXC API Error - {symbol}]: {e}", file=sys.stderr, flush=True)
     return None
 
+def get_daily_change_pct(symbol):
+    """คำนวณ % การเปลี่ยนแปลงรายวันจากกราฟแท่งเทียนวัน (Day1)"""
+    try:
+        clean_symbol = normalize_symbol(symbol)
+        url = f"https://contract.mexc.com/api/v1/contract/kline/{clean_symbol}?interval=Day1"
+        res = requests.get(url, timeout=5).json()
+        if res.get("success") and "data" in res:
+            data = res["data"]
+            if "close" in data and len(data["close"]) >= 2:
+                closes = [float(x) for x in data["close"]]
+                prev_close = closes[-2]
+                curr_close = closes[-1]
+                pct = ((curr_close - prev_close) / prev_close) * 100
+                return pct
+    except Exception as e:
+        print(f"[Daily Change Error - {symbol}]: {e}", file=sys.stderr, flush=True)
+    return 0.0
+
+def get_startup_message():
+    """สร้างข้อความเริ่มต้นพร้อมแสดง % รายวัน (แดงถ้าติดลบ, เขียวถ้าบวก/เท่ากับศูนย์)"""
+    lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟแบบ Real-time คู่เทรดดังนี้</b>"]
+    for s in SYMBOLS:
+        clean_s = normalize_symbol(s)
+        pct = get_daily_change_pct(clean_s)
+        if pct < 0:
+            emoji_color = "🔴"
+            pct_str = f"{pct:.2f}%"
+        else:
+            emoji_color = "🟢"
+            pct_str = f"+{pct:.2f}%" if pct > 0 else f"{pct:.2f}%"
+        lines.append(f"{clean_s}  {emoji_color} {pct_str}")
+    return "\n".join(lines)
+
 def analyze_symbol_data(symbol, interval):
-    """คำนวณ Indicator 7 ตัวและแนวรับแนวต้าน"""
     df = fetch_mexc_kline(symbol, interval)
     if df is None or len(df) < 30:
         return None
@@ -110,10 +142,10 @@ def analyze_symbol_data(symbol, interval):
         nonlocal up_count, down_count
         if is_up:
             up_count += 1
-            return "🟢 ⬆️"
+            return "⬆️"
         else:
             down_count += 1
-            return "🔴 ⬇️"
+            return "⬇️"
 
     rsi_dir = check_dir(rsi > 50)
     stoch_dir = check_dir(stoch_val > 50)
@@ -130,15 +162,14 @@ def analyze_symbol_data(symbol, interval):
     cci_dir = check_dir(cci > 0)
     macd_dir = check_dir(macd_val > 0)
 
-    # กำหนดสถานะสัญญาณและจุดเข้า
     if up_count > down_count:
-        signal = "🟢 ⬆️ BUY / LONG Signal (เข้าซื้อ)"
+        signal = "BUY / LONG Signal (เข้าซื้อ)"
         action = f"จุดเข้าซื้อ: ${price:,.2f}"
     elif down_count > up_count:
-        signal = "🔴 ⬇️ SELL / SHORT Signal (เทขาย)"
+        signal = "SELL / SHORT Signal (เทขาย)"
         action = f"จุดเทขาย: ${price:,.2f}"
     else:
-        signal = "⚪ NEUTRAL Signal (ไม่แน่นอน)"
+        signal = "NEUTRAL Signal (ไม่แน่นอน)"
         action = f"จุดเฝ้าระวัง: ${price:,.2f}"
 
     return {
@@ -170,16 +201,13 @@ def format_report_text(data):
 <b>{data['action']}</b>"""
 
 def check_instant_long_signal(symbol):
-    """ตรวจเช็กเงื่อนไข LONG ครบ 7 ข้อ เพื่อแจ้งเตือนด่วนทันที"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Hour4")
     if not data:
         return
 
-    # ครบเงื่อนไข 7 ข้อ (up_count == 7)
     if data['up_count'] == 7:
         now = time.time()
-        # ป้องกันส่งเตือนซ้ำซ้อนภายใน 15 นาที
         last_time = last_instant_alerts.get(clean_symbol, 0)
         if now - last_time > 900: 
             last_instant_alerts[clean_symbol] = now
@@ -191,19 +219,19 @@ def check_instant_long_signal(symbol):
 แนวรับ : ${data['s1']:,.2f}
 แนวต้าน : ${data['r1']:,.2f}
 ---------------------------------
-• RSI : {data['rsi']:.2f} 🟢 ⬆️
-• Stochastic : {data['stoch']:.2f} 🟢 ⬆️
-• Bollinger : {data['bb']:.2f} 🟢 ⬆️️
-• SAR : {data['sar']:.2f} 🟢 ⬆️
-• EMA 20 : {data['ema']:.2f} 🟢 ⬆️
-• CCI 20 : {data['cci']:.2f} 🟢 ⬆️
-• MACD : {data['macd']:.6f} 🟢 ⬆️
+• RSI : {data['rsi']:.2f} ⬆️
+• Stochastic : {data['stoch']:.2f} ⬆️
+• Bollinger : {data['bb']:.2f} ⬆️
+• SAR : {data['sar']:.2f} ⬆️
+• EMA 20 : {data['ema']:.2f} ⬆️
+• CCI 20 : {data['cci']:.2f} ⬆️
+• MACD : {data['macd']:.6f} ⬆️️
 ---------------------------------
-💡 <i>ครบเงื่อนไขฝั่ง LONG ทั้ง 7 Indicator พร้อมเข้าออเดอร์ทันทีค่ะ!</i>"""
+💡 <i>ครบเงื่อนไขฝั่ง LONG ทั้ง 7 Indicator พร้อมเข้าออเดอร์ทันทีค่ะ!</i>
+<b>จุดเข้าซื้อ: ${data['price']:,.2f}</b>"""
             send_telegram(msg)
 
 def send_hourly_report(symbol):
-    """ส่งรายงานสรุปภาพรวมประจำชั่วโมง"""
     clean_symbol = normalize_symbol(symbol)
     short_term = analyze_symbol_data(clean_symbol, "Hour4")
     long_term = analyze_symbol_data(clean_symbol, "Week1")
@@ -223,8 +251,10 @@ def send_hourly_report(symbol):
 
 def bot_loop():
     global last_hourly_time
-    symbols_text = ", ".join([normalize_symbol(s) for s in SYMBOLS])
-    send_telegram(f"🚀 <b>ผู้ช่วยเทรด MEXC</b> เริ่มเฝ้ากราฟแบบ Real-time และรายงานรายชั่วโมง ({symbols_text}) เรียบร้อยแล้วค่ะ!")
+    
+    # ส่งข้อความแจ้งเตือนสถานะเริ่มต้นพร้อม % รายวัน
+    startup_msg = get_startup_message()
+    send_telegram(startup_msg)
     
     # ส่งรายงานเริ่มต้นทันที 1 รอบ
     for s in SYMBOLS:
@@ -235,12 +265,12 @@ def bot_loop():
     while True:
         now = time.time()
         
-        # 1. วนตรวจเช็กสัญญาณ LONG ด่วนเรียลไทม์ (เช็กทุก 30 วินาที)
+        # 1. วนตรวจเช็กสัญญาณ LONG ด่วนเรียลไทม์ (ทุก 30 วินาที)
         for s in SYMBOLS:
             check_instant_long_signal(s)
             time.sleep(2)
 
-        # 2. ตรวจเช็กเวลาส่งรายงานสรุปรายชั่วโมง (ทุกๆ 3600 วินาที)
+        # 2. ส่งรายงานสรุปรายชั่วโมง (ทุก 1 ชั่วโมง)
         if now - last_hourly_time >= 3600:
             for s in SYMBOLS:
                 send_hourly_report(s)
