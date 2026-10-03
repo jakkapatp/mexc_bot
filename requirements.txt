@@ -1,3 +1,5 @@
-requests,
-pandas,
+requests
+pandas
 pandas-ta
+flask
+gunicorn
