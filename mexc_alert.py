@@ -22,7 +22,6 @@ SYMBOLS = ["ETH_USDT", "DOGE_USDT", "SOL_USDT", "XRP_USDT", "TRUMP_USDT", "ONE_U
 bot_started = False
 lock = threading.Lock()
 
-last_hourly_time = 0
 last_instant_alerts = {}  # {symbol: timestamp}
 last_update_id = 0        # สำหรับเช็คข้อความคำสั่งจาก Telegram
 
@@ -70,9 +69,9 @@ def handle_telegram_commands():
                         clean_s = normalize_symbol(raw_sym)
                         if clean_s in SYMBOLS:
                             SYMBOLS.remove(clean_s)
-                            send_telegram(f"🗑️ ลบพ้นคู่เหรียญ <b>{clean_s}</b> เรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join(SYMBOLS)}")
+                            send_telegram(f"🗑️ ลบคู่เหรียญ <b>{clean_s}</b> เรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join(SYMBOLS)}")
                         else:
-                            send_telegram(f"❌ไม่พบหรียญ <b>{clean_s}</b> ในรายการเฝ้าระวังค่ะ")
+                            send_telegram(f"❌ ไม่พบเหรียญ <b>{clean_s}</b> ในรายการเฝ้าระวังค่ะ")
                             
                     elif text == "/list":
                         send_telegram(f"📋 <b>รายชื่อคู่เหรียญเฝ้าระวังปัจจุบัน:</b>\n" + "\n".join([f"• {s}" for s in SYMBOLS]))
@@ -118,7 +117,7 @@ def get_daily_change_pct(symbol):
     return 0.0
 
 def get_startup_message():
-    """สร้างข้อความเริ่มต้นแสดง % รายวัน"""
+    """สร้างข้อความเริ่มต้นแสดง % รายวัน พร้อมคู่มือใช้งานต่อท้ายในข้อความเดียวกัน"""
     lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟแบบ Real-time คู่เทรดดังนี้</b>"]
     for s in SYMBOLS:
         clean_s = normalize_symbol(s)
@@ -128,6 +127,14 @@ def get_startup_message():
         else:
             pct_str = f"🟢 +{pct:.2f}%" if pct > 0 else f"🟢 {pct:.2f}%"
         lines.append(f"{clean_s}   {pct_str}")
+    
+    # ต่อด้วยคู่มือใช้งานในข้อความเดียวกันทันทีตามที่มาร์คไว้
+    lines.append("------------------------------")
+    lines.append("<b>คู่มือใช้งาน</b>")
+    lines.append("/add &lt;คู่เหรียญ&gt; (เช่น /add BTC_USDT หรือ /add btc) เพื่อเพิ่มคู่เหรียญใหม่เข้าไปในระบบเฝ้าระวัง")
+    lines.append("/remove &lt;คู่เหรียญ&gt; (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญออก")
+    lines.append("/list เพื่อดูรายชื่อคู่เหรียญทั้งหมดที่บอทกำลังเฝ้าระวังอยู่ตอนนี้")
+    
     return "\n".join(lines)
 
 def analyze_symbol_data(symbol, interval):
@@ -202,16 +209,6 @@ def analyze_symbol_data(symbol, interval):
     cci_dir = check_dir(cci > 0)
     macd_dir = check_dir(macd_val > 0)
 
-    if up_count >= 7:
-        signal = "BUY / LONG Signal 🟢"
-        action = f"จุดเข้าซื้อ: 🟢 ${price:,.4f}" if price < 1 else f"จุดเข้าซื้อ: 🟢 ${price:,.2f}"
-    elif down_count >= 7:
-        signal = "SELL / SHORT Signal 🔴"
-        action = f"จุดเทขาย: 🔴 ${price:,.4f}" if price < 1 else f"จุดเทขาย: 🔴 ${price:,.2f}"
-    else:
-        signal = "NEUTRAL Signal ⚪"
-        action = f"จุดเฝ้าระวัง: ⚪ ${price:,.4f}" if price < 1 else f"จุดเฝ้าระวัง: ⚪ ${price:,.2f}"
-
     return {
         "price": price, "s1": s1, "r1": r1,
         "rsi": rsi, "rsi_dir": rsi_dir,
@@ -221,27 +218,8 @@ def analyze_symbol_data(symbol, interval):
         "ema": ema, "ema_dir": ema_dir,
         "cci": cci, "cci_dir": cci_dir,
         "macd": macd_val, "macd_dir": macd_dir,
-        "up_count": up_count, "down_count": down_count,
-        "signal": signal, "action": action
+        "up_count": up_count, "down_count": down_count
     }
-
-def format_report_text(data):
-    p_fmt = f"${data['price']:,.4f}" if data['price'] < 1 else f"${data['price']:,.2f}"
-    s1_fmt = f"${data['s1']:,.4f}" if data['s1'] < 1 else f"${data['s1']:,.2f}"
-    r1_fmt = f"${data['r1']:,.4f}" if data['r1'] < 1 else f"${data['r1']:,.2f}"
-    return f"""ราคาปัจจุบัน: <b>{p_fmt}</b>
-แนวรับ : {s1_fmt}
-แนวต้าน : {r1_fmt}
-• RSI : {data['rsi']:.2f} {data['rsi_dir']}
-• Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
-• Bollinger : {data['bb']:,.4f} {data['bb_dir']}
-• SAR : {data['sar']:,.4f} {data['sar_dir']}
-• EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
-• CCI 20 : {data['cci']:.2f} {data['cci_dir']}
-• MACD : {data['macd']:.6f} {data['macd_dir']}
----------------------------------
-สัญญาณ: {data['signal']}
-<b>{data['action']}</b>"""
 
 def check_instant_signal(symbol):
     """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) และต้องครบ 7 ตัว (= 7)"""
@@ -294,52 +272,21 @@ def check_instant_signal(symbol):
 <b>{action_label}: {emoji_dir} {p_fmt}</b>"""
         send_telegram(msg)
 
-def send_hourly_report(symbol):
-    """แจ้งเตือนธรรมดา: วิเคราะห์กราฟ 1-4h (Hour4) และต้องครบ 7 ตัว (= 7)"""
-    clean_symbol = normalize_symbol(symbol)
-    data = analyze_symbol_data(clean_symbol, "Hour4")
-    
-    if not data:
-        return
-
-    if data['up_count'] == 7 or data['down_count'] == 7:
-        msg = f"""🚨 <b>MEXC Alert ({clean_symbol}) - รายงานประจำชั่วโมง [1-4h ครบ 7/7]</b>
-
-{format_report_text(data)}"""
-        send_telegram(msg)
-
 def bot_loop():
-    global last_hourly_time
-    
     startup_msg = get_startup_message()
     send_telegram(startup_msg)
-    
-    for s in list(SYMBOLS):
-        send_hourly_report(s)
-        time.sleep(2)
-    last_hourly_time = time.time()
 
     while True:
-        now = time.time()
-        
-        # 0. ตรวจสอบคำสั่งจากแชท Telegram ทุกๆ รอบลูป (เช่น /add, /remove, /list)
+        # 1. ตรวจสอบคำสั่งจากแชท Telegram ทุกๆ รอบลูป (เช่น /add, /remove, /list)
         handle_telegram_commands()
 
-        # 1. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m (ครบ 7 ตัว)
+        # 2. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m (ครบ 7 ตัว) ทุกๆ 30 วินาที
         current_symbols = list(SYMBOLS)
         for s in current_symbols:
             check_instant_signal(s)
             time.sleep(2)
 
-        # 2. ส่งรายงานสรุป 1-4h (ครบ 7 ตัว) ทุก 1 ชั่วโมง
-        if now - last_hourly_time >= 3600:
-            current_symbols = list(SYMBOLS)
-            for s in current_symbols:
-                send_hourly_report(s)
-                time.sleep(2)
-            last_hourly_time = time.time()
-
-        time.sleep(10)
+        time.sleep(30)
 
 def start_bot_thread():
     global bot_started
@@ -347,7 +294,7 @@ def start_bot_thread():
         if not bot_started:
             bot_started = True
             threading.Thread(target=bot_loop, daemon=True).start()
-            print("[System] Real-time & Hourly Bot Loop started!", file=sys.stdout, flush=True)
+            print("[System] Real-time Bot Loop started!", file=sys.stdout, flush=True)
 
 @app.route('/')
 def home():
