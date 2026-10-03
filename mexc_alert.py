@@ -16,7 +16,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = "8389657702:AAGYbKxFBC-GD1_0MMCOvS5GQ2bg0pnRGg4"
 CHAT_ID = "8876853259"
 
-# รายชื่อคู่เหรียญเฝ้าระวัง (Futures)
+# รายชื่อคู่เหรียญเฝ้าระวัง
 SYMBOLS = ["ETH_USDT", "DOGE_USDT", "SOL_USDT", "XRP_USDT", "TRUMP_USDT", "ONE_USDT"]
 
 bot_started = False
@@ -40,7 +40,7 @@ def send_telegram(message):
         print(f"[Telegram API Error]: {e}", file=sys.stderr, flush=True)
 
 def fetch_mexc_kline(symbol, interval):
-    """ดึงข้อมูลกราฟจาก MEXC Futures API โดยใช้รูปแบบมาตรฐาน (มีขีดล่าง เช่น ETH_USDT)"""
+    """ดึงข้อมูลกราฟจาก MEXC API โดยใช้รูปแบบมาตรฐาน (มีขีดล่าง เช่น ETH_USDT)"""
     try:
         clean_symbol = normalize_symbol(symbol)
         url = f"https://contract.mexc.com/api/v1/contract/kline/{clean_symbol}?interval={interval}"
@@ -55,11 +55,11 @@ def fetch_mexc_kline(symbol, interval):
                 })
                 return df
     except Exception as e:
-        print(f"[MEXC Futures API Error - {symbol}]: {e}", file=sys.stderr, flush=True)
+        print(f"[MEXC API Error - {symbol}]: {e}", file=sys.stderr, flush=True)
     return None
 
 def get_daily_change_pct(symbol):
-    """คำนวณ % การเปลี่ยนแปลงรายวันจาก Futures API"""
+    """คำนวณ % การเปลี่ยนแปลงรายวันจาก API"""
     try:
         clean_symbol = normalize_symbol(symbol)
         url = f"https://contract.mexc.com/api/v1/contract/kline/{clean_symbol}?interval=Day1"
@@ -78,7 +78,7 @@ def get_daily_change_pct(symbol):
 
 def get_startup_message():
     """สร้างข้อความเริ่มต้นแสดง % รายวัน"""
-    lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟ แบบ Real-time คู่เทรดดังนี้</b>"]
+    lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟแบบ Real-time คู่เทรดดังนี้</b>"]
     for s in SYMBOLS:
         clean_s = normalize_symbol(s)
         pct = get_daily_change_pct(clean_s)
@@ -161,10 +161,10 @@ def analyze_symbol_data(symbol, interval):
     cci_dir = check_dir(cci > 0)
     macd_dir = check_dir(macd_val > 0)
 
-    if up_count >= 7:
+    if up_count > down_count:
         signal = "BUY / LONG Signal 🟢"
         action = f"จุดเข้าซื้อ: 🟢 ${price:,.4f}" if price < 1 else f"จุดเข้าซื้อ: 🟢 ${price:,.2f}"
-    elif down_count >= 7:
+    elif down_count > up_count:
         signal = "SELL / SHORT Signal 🔴"
         action = f"จุดเทขาย: 🔴 ${price:,.4f}" if price < 1 else f"จุดเทขาย: 🔴 ${price:,.2f}"
     else:
@@ -203,21 +203,17 @@ def format_report_text(data):
 <b>{data['action']}</b>"""
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w ขึ้นไป (Week1) และต้องครบ 7 ตัว (= 7) เท่านั้น"""
+    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) ตามฝั่งที่มีน้ำหนักมากกว่า"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
         return
 
-    signal_type = None
-    count_val = 0
-    emoji_dir = ""
-    
-    if data['up_count'] == 7:
+    if data['up_count'] > data['down_count']:
         signal_type = "LONG"
         count_val = data['up_count']
         emoji_dir = "🟢"
-    elif data['down_count'] == 7:
+    elif data['down_count'] > data['up_count']:
         signal_type = "SHORT"
         count_val = data['down_count']
         emoji_dir = "🔴"
@@ -234,8 +230,8 @@ def check_instant_signal(symbol):
         s1_fmt = f"${data['s1']:,.4f}" if data['s1'] < 1 else f"${data['s1']:,.2f}"
         r1_fmt = f"${data['r1']:,.4f}" if data['r1'] < 1 else f"${data['r1']:,.2f}"
 
-        msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w] สัญญาณ {signal_type} ครบถ้วน ({count_val}/7)</b> 🔥
-<b>คู่เหรียญ: MEXC Futures ({clean_symbol})</b>
+        msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ({count_val}/7 ตัว)</b> 🔥
+<b>คู่เหรียญ: MEXC ({clean_symbol})</b>
 🎯 <b>{action_label}: {emoji_dir} {p_fmt}</b>
 
 แนวรับ : {s1_fmt}
@@ -249,31 +245,22 @@ def check_instant_signal(symbol):
 • CCI 20 : {data['cci']:.2f} {data['cci_dir']}
 • MACD : {data['macd']:.6f} {data['macd_dir']}
 ---------------------------------
-💡 <i>อินดิเคเตอร์ Timeframe 1w สอดคล้องกันครบ 7/7 ตัวฝั่ง {signal_type} พร้อมลุยทันทีค่ะ!</i>
+💡 <i>อินดิเคเตอร์ Timeframe 1w-1m น้ำหนักเอียงไปทางฝั่ง {signal_type} ({count_val}/7 ตัว) ค่ะ!</i>
 <b>{action_label}: {emoji_dir} {p_fmt}</b>"""
         send_telegram(msg)
 
 def send_hourly_report(symbol):
-    """แจ้งเตือนธรรมดา: ส่งเฉพาะเมื่อมีสัญญาณครบ 7 ตัวขึ้นไป"""
+    """แจ้งเตือนธรรมดา: วิเคราะห์กราฟ 1-4h (Hour4) ตามฝั่งที่มีน้ำหนักมากกว่า"""
     clean_symbol = normalize_symbol(symbol)
-    short_term = analyze_symbol_data(clean_symbol, "Hour4")
-    long_term = analyze_symbol_data(clean_symbol, "Week1")
+    data = analyze_symbol_data(clean_symbol, "Hour4")
     
-    if not short_term or not long_term:
+    if not data:
         return
 
-    # เงื่อนไข: ต้องมีสัญญาณครบ 7 ตัวฝั่งใดฝั่งหนึ่งถึงจะส่งรายงาน
-    if (short_term['up_count'] == 7 or short_term['down_count'] == 7 or 
-        long_term['up_count'] == 7 or long_term['down_count'] == 7):
-        
-        msg = f"""🚨 <b>MEXC Alert ({clean_symbol}) [สัญญาณครบ 7/7]</b>
+    if data['up_count'] != data['down_count']:
+        msg = f"""🚨 <b>MEXC Alert ({clean_symbol}) - รายงานประจำชั่วโมง [1-4h]</b>
 
-<b>วิเคราะห์ระยะสั้น 1-4 ชั่วโมง</b>
-{format_report_text(short_term)}
-
-<b>วิเคราะห์ระยะยาว 1w-1m</b>
-{format_report_text(long_term)}"""
-        
+{format_report_text(data)}"""
         send_telegram(msg)
 
 def bot_loop():
@@ -290,12 +277,12 @@ def bot_loop():
     while True:
         now = time.time()
         
-        # 1. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w (ครบ 7 ตัว) ทุก 30 วินาที
+        # 1. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m ทุก 30 วินาที
         for s in SYMBOLS:
             check_instant_signal(s)
             time.sleep(2)
 
-        # 2. ส่งรายงานสรุปเมื่อครบเงื่อนไข 7/7 ทุก 1 ชั่วโมง
+        # 2. ส่งรายงานสรุป 1-4h ทุก 1 ชั่วโมง
         if now - last_hourly_time >= 3600:
             for s in SYMBOLS:
                 send_hourly_report(s)
