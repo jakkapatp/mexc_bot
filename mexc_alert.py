@@ -78,7 +78,7 @@ def get_daily_change_pct(symbol):
 
 def get_startup_message():
     """สร้างข้อความเริ่มต้นแสดง % รายวัน"""
-    lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟ Futures แบบ Real-time คู่เทรดดังนี้</b>"]
+    lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟ แบบ Real-time คู่เทรดดังนี้</b>"]
     for s in SYMBOLS:
         clean_s = normalize_symbol(s)
         pct = get_daily_change_pct(clean_s)
@@ -266,7 +266,7 @@ def send_hourly_report(symbol):
     if (short_term['up_count'] == 7 or short_term['down_count'] == 7 or 
         long_term['up_count'] == 7 or long_term['down_count'] == 7):
         
-        msg = f"""🚨 <b>MEXC Futures Alert ({clean_symbol}) [สัญญาณครบ 7/7]</b>
+        msg = f"""🚨 <b>MEXC Alert ({clean_symbol}) [สัญญาณครบ 7/7]</b>
 
 <b>วิเคราะห์ระยะสั้น 1-4 ชั่วโมง</b>
 {format_report_text(short_term)}
@@ -315,7 +315,7 @@ def start_bot_thread():
 @app.route('/')
 def home():
     start_bot_thread()
-    return "MEXC Futures Bot is running 24/7!"
+    return "MEXC Bot is running 24/7!"
 
 start_bot_thread()
 
