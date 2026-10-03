@@ -13,7 +13,7 @@ sys.stdout.reconfigure(line_buffering=True)
 app = Flask(__name__)
 
 # --- ข้อมูล Telegram & Trading ---
-TELEGRAM_TOKEN = "8389657782:AAGYbKxFBC-GD1_BMMCOvS5GQ2bg8pnRSg4"
+TELEGRAM_TOKEN = "8389657702:AAGYbKxFBC-GD1_0MMCOvS5GQ2bg0pnRGg4"
 CHAT_ID = "8876853259"
 
 # รายชื่อคู่เหรียญที่ต้องการเฝ้าระวัง
