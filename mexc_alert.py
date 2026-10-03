@@ -19,7 +19,7 @@ def run_web():
 
 # --- ข้อมูล Telegram ---
 TELEGRAM_TOKEN = "8389657782:AAGYbKxFBC-GD1_BMMCOvS5GQ2bg8pnRSg4"
-CHAT_ID = "วาง_CHAT_ID_ตรงนี้"  # ใส่ Chat ID ของพี่โด่ง
+CHAT_ID = "8876853259"  # ใส่ Chat ID ของพี่โด่ง
 SYMBOL = "ETH_USDT"
 
 def send_telegram(message):
