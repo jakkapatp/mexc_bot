@@ -161,14 +161,14 @@ def analyze_symbol_data(symbol, interval):
     macd_dir = check_dir(macd_val > 0)
 
     if up_count > down_count:
-        signal = "BUY / LONG Signal (เข้าซื้อ)"
-        action = f"จุดเข้าซื้อ: ${price:,.2f}"
+        signal = "BUY / LONG Signal 🟢"
+        action = f"จุดเข้าซื้อ: 🟢 ${price:,.2f}"
     elif down_count > up_count:
-        signal = "SELL / SHORT Signal (เทขาย)"
-        action = f"จุดเทขาย: ${price:,.2f}"
+        signal = "SELL / SHORT Signal 🔴"
+        action = f"จุดเทขาย: 🔴 ${price:,.2f}"
     else:
-        signal = "NEUTRAL Signal (ไม่แน่นอน)"
-        action = f"จุดเฝ้าระวัง: ${price:,.2f}"
+        signal = "NEUTRAL Signal ⚪"
+        action = f"จุดเฝ้าระวัง: ⚪ ${price:,.2f}"
 
     return {
         "price": price, "s1": s1, "r1": r1,
@@ -198,36 +198,52 @@ def format_report_text(data):
 สัญญาณ: {data['signal']}
 <b>{data['action']}</b>"""
 
-def check_instant_long_signal(symbol):
+def check_instant_signal(symbol):
+    """ตรวจสอบเงื่อนไขแจ้งเตือนด่วน เมื่ออินดิเคเตอร์สัมพันธ์กันตั้งแต่ 6 ตัวขึ้นไป"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Hour4")
     if not data:
         return
 
-    if data['up_count'] == 7:
-        now = time.time()
-        last_time = last_instant_alerts.get(clean_symbol, 0)
-        if now - last_time > 900: 
-            last_instant_alerts[clean_symbol] = now
-            
-            msg = f"""🔥 <b>[แจ้งเตือนด่วน] สัญญาณ LONG สมบูรณ์ 100% (7/7)</b> 🔥
+    signal_type = None
+    count_val = 0
+    emoji_dir = ""
+    
+    if data['up_count'] >= 6:
+        signal_type = "LONG"
+        count_val = data['up_count']
+        emoji_dir = "🟢"
+    elif data['down_count'] >= 6:
+        signal_type = "SHORT"
+        count_val = data['down_count']
+        emoji_dir = "🔴"
+    else:
+        return
+
+    now = time.time()
+    last_time = last_instant_alerts.get(clean_symbol, 0)
+    if now - last_time > 900: # ป้องกันส่งซ้ำภายใน 15 นาที
+        last_instant_alerts[clean_symbol] = now
+        
+        action_label = "จุดเข้าซื้อ" if signal_type == "LONG" else "จุดเทขาย"
+        msg = f"""🔥 <b>[แจ้งเตือนด่วน] สัญญาณ {signal_type} สัมพันธ์กัน ({count_val}/7)</b> 🔥
 <b>คู่เหรียญ: MEXC ({clean_symbol})</b>
-🎯 <b>จุดเข้าซื้อ: ${data['price']:,.2f}</b>
+🎯 <b>{action_label}: {emoji_dir} ${data['price']:,.2f}</b>
 
 แนวรับ : ${data['s1']:,.2f}
 แนวต้าน : ${data['r1']:,.2f}
 ---------------------------------
-• RSI : {data['rsi']:.2f} ⬆️
-• Stochastic : {data['stoch']:.2f} ⬆️
-• Bollinger : {data['bb']:.2f} ⬆️
-• SAR : {data['sar']:.2f} ⬆️
-• EMA 20 : {data['ema']:.2f} ⬆️
-• CCI 20 : {data['cci']:.2f} ⬆️
-• MACD : {data['macd']:.6f} ⬆️
+• RSI : {data['rsi']:.2f} {data['rsi_dir']}
+• Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
+• Bollinger : {data['bb']:.2f} {data['bb_dir']}
+• SAR : {data['sar']:.2f} {data['sar_dir']}
+• EMA 20 : {data['ema']:.2f} {data['ema_dir']}
+• CCI 20 : {data['cci']:.2f} {data['cci_dir']}
+• MACD : {data['macd']:.6f} {data['macd_dir']}
 ---------------------------------
-💡 <i>ครบเงื่อนไขฝั่ง LONG ทั้ง 7 Indicator พร้อมเข้าออเดอร์ทันทีค่ะ!</i>
-<b>จุดเข้าซื้อ: ${data['price']:,.2f}</b>"""
-            send_telegram(msg)
+💡 <i>อินดิเคเตอร์สอดคล้องกันฝั่ง {signal_type} จำนวน {count_val}/7 ตัว พร้อมเทรดทันทีค่ะ!</i>
+<b>{action_label}: {emoji_dir} ${data['price']:,.2f}</b>"""
+        send_telegram(msg)
 
 def send_hourly_report(symbol):
     clean_symbol = normalize_symbol(symbol)
@@ -250,11 +266,9 @@ def send_hourly_report(symbol):
 def bot_loop():
     global last_hourly_time
     
-    # ส่งข้อความแจ้งเตือนสถานะเริ่มต้นพร้อม % รายวัน
     startup_msg = get_startup_message()
     send_telegram(startup_msg)
     
-    # ส่งรายงานเริ่มต้นทันที 1 รอบ
     for s in SYMBOLS:
         send_hourly_report(s)
         time.sleep(2)
@@ -263,9 +277,9 @@ def bot_loop():
     while True:
         now = time.time()
         
-        # 1. วนตรวจเช็กสัญญาณ LONG ด่วนเรียลไทม์ (ทุก 30 วินาที)
+        # 1. ตรวจสอบสัญญาณด่วนเรียลไทม์ (6/7 ตัวขึ้นไป) ทุก 30 วินาที
         for s in SYMBOLS:
-            check_instant_long_signal(s)
+            check_instant_signal(s)
             time.sleep(2)
 
         # 2. ส่งรายงานสรุปรายชั่วโมง (ทุก 1 ชั่วโมง)
