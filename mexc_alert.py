@@ -11,12 +11,14 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "MEXC Bot is running 24/7!"
+    return "MEXC Multi-Symbol Bot is running 24/7!"
 
 # --- ข้อมูล Telegram & Trading ---
 TELEGRAM_TOKEN = "8389657782:AAGYbKxFBC-GD1_BMMCOvS5GQ2bg8pnRSg4"
 CHAT_ID = "8876853259"
-SYMBOL = "ETH_USDT"
+
+# รายชื่อคู่เหรียญที่ต้องการให้เฝ้าระวัง (สามารถใส่เพิ่มได้ เช่น "BTC_USDT", "SOL_USDT")
+SYMBOLS = ["ETH_USDT", "TRUMP_USDT"]
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -38,11 +40,11 @@ def fetch_mexc_kline(symbol):
             })
             return df
     except Exception as e:
-        print("Fetch Error:", e)
+        print(f"Fetch Error ({symbol}):", e)
     return None
 
-def analyze_and_notify():
-    df = fetch_mexc_kline(SYMBOL)
+def analyze_and_notify(symbol):
+    df = fetch_mexc_kline(symbol)
     if df is None or len(df) < 30:
         return
 
@@ -62,7 +64,7 @@ def analyze_and_notify():
         signal = "🔴 <b>SELL / SHORT Signal</b>"
 
     if signal:
-        msg = f"""🚨 <b>MEXC Alert ({SYMBOL})</b> 🚨
+        msg = f"""🚨 <b>MEXC Alert ({symbol})</b> 🚨
 ราคาปัจจุบัน: <b>${price:,.4f}</b>
 • RSI (14): {rsi:.2f}
 • MACD Hist: {macdh:.6f}
@@ -71,12 +73,15 @@ def analyze_and_notify():
         send_telegram(msg)
 
 def bot_loop():
-    send_telegram(f"🚀 ระบบ AI เฝ้ากระดาน MEXC ({SYMBOL}) เริ่มทำงานแล้วค่ะ")
+    symbols_text = ", ".join(SYMBOLS)
+    send_telegram(f"🚀 ระบบ AI เฝ้ากระดาน MEXC ({symbols_text}) เริ่มทำงานแล้วค่ะ")
     while True:
-        analyze_and_notify()
+        for symbol in SYMBOLS:
+            analyze_and_notify(symbol)
+            time.sleep(2)  # เว้นระยะเพื่อไม่ให้ดึงข้อมูลถี่เกินไป
         time.sleep(60)
 
-# สั่งให้บอทเริ่มทำงานเบื้องหลังทันทีที่ Render โหลดไฟล์
+# สั่งให้บอทเริ่มทำงานเบื้องหลังทันที
 threading.Thread(target=bot_loop, daemon=True).start()
 
 if __name__ == "__main__":
