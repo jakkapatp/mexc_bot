@@ -16,7 +16,7 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = "8389657702:AAGYbKxFBC-GD1_0MMCOvS5GQ2bg0pnRGg4"
 CHAT_ID = "8876853259"
 
-# รายชื่อคู่เหรียญเฝ้าระวัง
+# รายชื่อคู่เหรียญเฝ้าระวัง (สามารถเพิ่ม/ลบผ่าน Telegram ได้)
 SYMBOLS = ["ETH_USDT", "DOGE_USDT", "SOL_USDT", "XRP_USDT", "TRUMP_USDT", "ONE_USDT"]
 
 bot_started = False
@@ -24,6 +24,7 @@ lock = threading.Lock()
 
 last_hourly_time = 0
 last_instant_alerts = {}  # {symbol: timestamp}
+last_update_id = 0        # สำหรับเช็คข้อความคำสั่งจาก Telegram
 
 def normalize_symbol(symbol):
     s = symbol.strip().upper()
@@ -38,6 +39,46 @@ def send_telegram(message):
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
         print(f"[Telegram API Error]: {e}", file=sys.stderr, flush=True)
+
+def handle_telegram_commands():
+    """ตรวจสอบและจัดการคำสั่งที่พิมพ์มาจาก Telegram แชทส่วนตัว"""
+    global SYMBOLS, last_update_id
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_update_id + 1}&timeout=5"
+    try:
+        res = requests.get(url, timeout=10).json()
+        if res.get("ok"):
+            for update in res.get("result", []):
+                last_update_id = update["update_id"]
+                message = update.get("message", {})
+                chat_id = str(message.get("chat", {}).get("id"))
+                
+                # กรองเฉพาะแชทของพี่โด่ง
+                if chat_id == CHAT_ID:
+                    text = message.get("text", "").strip()
+                    
+                    if text.startswith("/add "):
+                        raw_sym = text.replace("/add", "").strip()
+                        clean_s = normalize_symbol(raw_sym)
+                        if clean_s not in SYMBOLS:
+                            SYMBOLS.append(clean_s)
+                            send_telegram(f"✅ เพิ่มคู่เหรียญ <b>{clean_s}</b> เข้าสู่ระบบเรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join(SYMBOLS)}")
+                        else:
+                            send_telegram(f"ℹ️ คู่เหรียญ <b>{clean_s}</b> มีอยู่ในรายการอยู่แล้วค่ะ")
+                            
+                    elif text.startswith("/remove "):
+                        raw_sym = text.replace("/remove", "").strip()
+                        clean_s = normalize_symbol(raw_sym)
+                        if clean_s in SYMBOLS:
+                            SYMBOLS.remove(clean_s)
+                            send_telegram(f"🗑️ ลบพ้นคู่เหรียญ <b>{clean_s}</b> เรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join(SYMBOLS)}")
+                        else:
+                            send_telegram(f"❌ไม่พบหรียญ <b>{clean_s}</b> ในรายการเฝ้าระวังค่ะ")
+                            
+                    elif text == "/list":
+                        send_telegram(f"📋 <b>รายชื่อคู่เหรียญเฝ้าระวังปัจจุบัน:</b>\n" + "\n".join([f"• {s}" for s in SYMBOLS]))
+                        
+    except Exception as e:
+        print(f"[Command Error]: {e}", file=sys.stderr, flush=True)
 
 def fetch_mexc_kline(symbol, interval):
     """ดึงข้อมูลกราฟจาก MEXC API โดยใช้รูปแบบมาตรฐาน (มีขีดล่าง เช่น ETH_USDT)"""
@@ -273,7 +314,7 @@ def bot_loop():
     startup_msg = get_startup_message()
     send_telegram(startup_msg)
     
-    for s in SYMBOLS:
+    for s in list(SYMBOLS):
         send_hourly_report(s)
         time.sleep(2)
     last_hourly_time = time.time()
@@ -281,19 +322,24 @@ def bot_loop():
     while True:
         now = time.time()
         
-        # 1. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m (ครบ 7 ตัว) ทุก 30 วินาที
-        for s in SYMBOLS:
+        # 0. ตรวจสอบคำสั่งจากแชท Telegram ทุกๆ รอบลูป (เช่น /add, /remove, /list)
+        handle_telegram_commands()
+
+        # 1. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m (ครบ 7 ตัว)
+        current_symbols = list(SYMBOLS)
+        for s in current_symbols:
             check_instant_signal(s)
             time.sleep(2)
 
         # 2. ส่งรายงานสรุป 1-4h (ครบ 7 ตัว) ทุก 1 ชั่วโมง
         if now - last_hourly_time >= 3600:
-            for s in SYMBOLS:
+            current_symbols = list(SYMBOLS)
+            for s in current_symbols:
                 send_hourly_report(s)
                 time.sleep(2)
             last_hourly_time = time.time()
 
-        time.sleep(30)
+        time.sleep(10)
 
 def start_bot_thread():
     global bot_started
