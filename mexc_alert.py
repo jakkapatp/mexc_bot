@@ -161,10 +161,10 @@ def analyze_symbol_data(symbol, interval):
     cci_dir = check_dir(cci > 0)
     macd_dir = check_dir(macd_val > 0)
 
-    if up_count > down_count:
+    if up_count >= 7:
         signal = "BUY / LONG Signal 🟢"
         action = f"จุดเข้าซื้อ: 🟢 ${price:,.4f}" if price < 1 else f"จุดเข้าซื้อ: 🟢 ${price:,.2f}"
-    elif down_count > up_count:
+    elif down_count >= 7:
         signal = "SELL / SHORT Signal 🔴"
         action = f"จุดเทขาย: 🔴 ${price:,.4f}" if price < 1 else f"จุดเทขาย: 🔴 ${price:,.2f}"
     else:
@@ -203,17 +203,21 @@ def format_report_text(data):
 <b>{data['action']}</b>"""
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) ตามฝั่งที่มีน้ำหนักมากกว่า"""
+    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) และต้องครบ 7 ตัว (= 7)"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
         return
 
-    if data['up_count'] > data['down_count']:
+    signal_type = None
+    count_val = 0
+    emoji_dir = ""
+    
+    if data['up_count'] == 7:
         signal_type = "LONG"
         count_val = data['up_count']
         emoji_dir = "🟢"
-    elif data['down_count'] > data['up_count']:
+    elif data['down_count'] == 7:
         signal_type = "SHORT"
         count_val = data['down_count']
         emoji_dir = "🔴"
@@ -230,7 +234,7 @@ def check_instant_signal(symbol):
         s1_fmt = f"${data['s1']:,.4f}" if data['s1'] < 1 else f"${data['s1']:,.2f}"
         r1_fmt = f"${data['r1']:,.4f}" if data['r1'] < 1 else f"${data['r1']:,.2f}"
 
-        msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ({count_val}/7 ตัว)</b> 🔥
+        msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ครบถ้วน ({count_val}/7)</b> 🔥
 <b>คู่เหรียญ: MEXC ({clean_symbol})</b>
 🎯 <b>{action_label}: {emoji_dir} {p_fmt}</b>
 
@@ -245,20 +249,20 @@ def check_instant_signal(symbol):
 • CCI 20 : {data['cci']:.2f} {data['cci_dir']}
 • MACD : {data['macd']:.6f} {data['macd_dir']}
 ---------------------------------
-💡 <i>อินดิเคเตอร์ Timeframe 1w-1m น้ำหนักเอียงไปทางฝั่ง {signal_type} ({count_val}/7 ตัว) ค่ะ!</i>
+💡 <i>อินดิเคเตอร์ Timeframe 1w-1m สอดคล้องกันครบ 7/7 ตัวฝั่ง {signal_type} พร้อมลุยทันทีค่ะ!</i>
 <b>{action_label}: {emoji_dir} {p_fmt}</b>"""
         send_telegram(msg)
 
 def send_hourly_report(symbol):
-    """แจ้งเตือนธรรมดา: วิเคราะห์กราฟ 1-4h (Hour4) ตามฝั่งที่มีน้ำหนักมากกว่า"""
+    """แจ้งเตือนธรรมดา: วิเคราะห์กราฟ 1-4h (Hour4) และต้องครบ 7 ตัว (= 7)"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Hour4")
     
     if not data:
         return
 
-    if data['up_count'] != data['down_count']:
-        msg = f"""🚨 <b>MEXC Alert ({clean_symbol}) - รายงานประจำชั่วโมง [1-4h]</b>
+    if data['up_count'] == 7 or data['down_count'] == 7:
+        msg = f"""🚨 <b>MEXC Alert ({clean_symbol}) - รายงานประจำชั่วโมง [1-4h ครบ 7/7]</b>
 
 {format_report_text(data)}"""
         send_telegram(msg)
@@ -277,12 +281,12 @@ def bot_loop():
     while True:
         now = time.time()
         
-        # 1. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m ทุก 30 วินาที
+        # 1. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m (ครบ 7 ตัว) ทุก 30 วินาที
         for s in SYMBOLS:
             check_instant_signal(s)
             time.sleep(2)
 
-        # 2. ส่งรายงานสรุป 1-4h ทุก 1 ชั่วโมง
+        # 2. ส่งรายงานสรุป 1-4h (ครบ 7 ตัว) ทุก 1 ชั่วโมง
         if now - last_hourly_time >= 3600:
             for s in SYMBOLS:
                 send_hourly_report(s)
