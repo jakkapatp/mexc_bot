@@ -21,6 +21,10 @@ SYMBOLS = ["ETH_USDT", "DOGE_USDT", "XRP_USDT", "TRUMP_USDT", "ONE_USDT"]
 bot_started = False
 lock = threading.Lock()
 
+# ตัวแปรจำเวลาส่งแจ้งเตือน ป้องกันการส่งข้อความซ้ำซ้อน
+last_hourly_time = 0
+last_instant_alerts = {}  # {symbol: timestamp}
+
 def normalize_symbol(symbol):
     s = symbol.strip().upper()
     if not s.endswith("_USDT"):
@@ -36,7 +40,6 @@ def send_telegram(message):
         print(f"[Telegram API Error]: {e}", file=sys.stderr, flush=True)
 
 def fetch_mexc_kline(symbol, interval):
-    """ดึงข้อมูลกราฟ (Hour4 = ระยะสั้น, Week1 = ระยะยาว)"""
     try:
         clean_symbol = normalize_symbol(symbol)
         url = f"https://contract.mexc.com/api/v1/contract/kline/{clean_symbol}?interval={interval}"
@@ -54,12 +57,12 @@ def fetch_mexc_kline(symbol, interval):
         print(f"[MEXC API Error - {symbol}]: {e}", file=sys.stderr, flush=True)
     return None
 
-def generate_analysis_text(symbol, interval):
+def analyze_symbol_data(symbol, interval):
+    """คำนวณ Indicator 7 ตัวและแนวรับแนวต้าน"""
     df = fetch_mexc_kline(symbol, interval)
     if df is None or len(df) < 30:
         return None
 
-    # คำนวณ Indicator 7 ตัว
     df['RSI'] = ta.rsi(df['close'], length=14)
     
     stoch = ta.stoch(df['high'], df['low'], df['close'])
@@ -86,14 +89,11 @@ def generate_analysis_text(symbol, interval):
     curr = df.iloc[-1]
     prev = df.iloc[-2]
 
-    # คำนวณแนวรับ-แนวต้านจาก Pivot Point ของแท่งเทียนก่อนหน้า
     pivot = (prev['high'] + prev['low'] + prev['close']) / 3
     s1 = (2 * pivot) - prev['high']
     r1 = (2 * pivot) - prev['low']
     
     price = curr['close']
-    
-    # ดึงค่า Indicator ล่าสุด พร้อมป้องกันค่าว่าง (NaN)
     rsi = curr['RSI'] if pd.notna(curr['RSI']) else 50.0
     stoch_val = curr['STOCH'] if pd.notna(curr['STOCH']) else 50.0
     bb_val = curr['BB_MID'] if pd.notna(curr['BB_MID']) else price
@@ -106,56 +106,107 @@ def generate_analysis_text(symbol, interval):
     up_count = 0
     down_count = 0
 
-    def get_dir(is_up):
+    def check_dir(is_up):
         nonlocal up_count, down_count
         if is_up:
             up_count += 1
-            return "🟢"
+            return "🟢 ⬆️"
         else:
             down_count += 1
-            return "🔴"
+            return "🔴 ⬇️"
 
-    rsi_dir = get_dir(rsi > 50)
-    stoch_dir = get_dir(stoch_val > 50)
-    bb_dir = get_dir(price > bb_val)
+    rsi_dir = check_dir(rsi > 50)
+    stoch_dir = check_dir(stoch_val > 50)
+    bb_dir = check_dir(price > bb_val)
     
     if pd.notna(sar_l):
         sar_val = sar_l
-        sar_dir = get_dir(True)
+        sar_dir = check_dir(True)
     else:
         sar_val = sar_s if pd.notna(sar_s) else price
-        sar_dir = get_dir(False)
+        sar_dir = check_dir(False)
         
-    ema_dir = get_dir(price > ema)
-    cci_dir = get_dir(cci > 0)
-    macd_dir = get_dir(macd_val > 0)
+    ema_dir = check_dir(price > ema)
+    cci_dir = check_dir(cci > 0)
+    macd_dir = check_dir(macd_val > 0)
 
-    # กฎการวิเคราะห์ตามที่พี่โด่งกำหนด
+    # กำหนดสถานะสัญญาณและจุดเข้า
     if up_count > down_count:
-        signal = "🟢 BUY / LONG Signal (สมหวัง)"
+        signal = "🟢 ⬆️ BUY / LONG Signal (เข้าซื้อ)"
+        action = f"จุดเข้าซื้อ: ${price:,.2f}"
     elif down_count > up_count:
-        signal = "🔴 SELL / SHORT Signal (ยุ่งเหยิง)"
+        signal = "🔴 ⬇️ SELL / SHORT Signal (เทขาย)"
+        action = f"จุดเทขาย: ${price:,.2f}"
     else:
         signal = "⚪ NEUTRAL Signal (ไม่แน่นอน)"
+        action = f"จุดเฝ้าระวัง: ${price:,.2f}"
 
-    return f"""ราคาปัจจุบัน: <b>${price:,.4f}</b>
-แนวรับ : ${s1:,.4f}
-แนวต้าน : ${r1:,.4f}
-• RSI : {rsi:.2f} {rsi_dir}
-• Stochastic : {stoch_val:.4f} {stoch_dir}
-• Bollinger : {bb_val:.4f} {bb_dir}
-• SAR : {sar_val:.4f} {sar_dir}
-• EMA 20 : {ema:.4f} {ema_dir}
-• CCI 20 : {cci:.4f} {cci_dir}
-• MACD : {macd_val:.6f} {macd_dir}
+    return {
+        "price": price, "s1": s1, "r1": r1,
+        "rsi": rsi, "rsi_dir": rsi_dir,
+        "stoch": stoch_val, "stoch_dir": stoch_dir,
+        "bb": bb_val, "bb_dir": bb_dir,
+        "sar": sar_val, "sar_dir": sar_dir,
+        "ema": ema, "ema_dir": ema_dir,
+        "cci": cci, "cci_dir": cci_dir,
+        "macd": macd_val, "macd_dir": macd_dir,
+        "up_count": up_count, "down_count": down_count,
+        "signal": signal, "action": action
+    }
+
+def format_report_text(data):
+    return f"""ราคาปัจจุบัน: <b>${data['price']:,.2f}</b>
+แนวรับ : ${data['s1']:,.2f}
+แนวต้าน : ${data['r1']:,.2f}
+• RSI : {data['rsi']:.2f} {data['rsi_dir']}
+• Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
+• Bollinger : {data['bb']:.2f} {data['bb_dir']}
+• SAR : {data['sar']:.2f} {data['sar_dir']}
+• EMA 20 : {data['ema']:.2f} {data['ema_dir']}
+• CCI 20 : {data['cci']:.2f} {data['cci_dir']}
+• MACD : {data['macd']:.6f} {data['macd_dir']}
 ---------------------------------
-สัญญาณ: {signal}"""
+สัญญาณ: {data['signal']}
+<b>{data['action']}</b>"""
 
-def analyze_and_notify(symbol):
+def check_instant_long_signal(symbol):
+    """ตรวจเช็กเงื่อนไข LONG ครบ 7 ข้อ เพื่อแจ้งเตือนด่วนทันที"""
     clean_symbol = normalize_symbol(symbol)
-    
-    short_term = generate_analysis_text(clean_symbol, "Hour4")
-    long_term = generate_analysis_text(clean_symbol, "Week1")
+    data = analyze_symbol_data(clean_symbol, "Hour4")
+    if not data:
+        return
+
+    # ครบเงื่อนไข 7 ข้อ (up_count == 7)
+    if data['up_count'] == 7:
+        now = time.time()
+        # ป้องกันส่งเตือนซ้ำซ้อนภายใน 15 นาที
+        last_time = last_instant_alerts.get(clean_symbol, 0)
+        if now - last_time > 900: 
+            last_instant_alerts[clean_symbol] = now
+            
+            msg = f"""🔥 <b>[แจ้งเตือนด่วน] สัญญาณ LONG สมบูรณ์ 100% (7/7)</b> 🔥
+<b>คู่เหรียญ: MEXC ({clean_symbol})</b>
+🎯 <b>จุดเข้าซื้อ: ${data['price']:,.2f}</b>
+
+แนวรับ : ${data['s1']:,.2f}
+แนวต้าน : ${data['r1']:,.2f}
+---------------------------------
+• RSI : {data['rsi']:.2f} 🟢 ⬆️
+• Stochastic : {data['stoch']:.2f} 🟢 ⬆️
+• Bollinger : {data['bb']:.2f} 🟢 ⬆️️
+• SAR : {data['sar']:.2f} 🟢 ⬆️
+• EMA 20 : {data['ema']:.2f} 🟢 ⬆️
+• CCI 20 : {data['cci']:.2f} 🟢 ⬆️
+• MACD : {data['macd']:.6f} 🟢 ⬆️
+---------------------------------
+💡 <i>ครบเงื่อนไขฝั่ง LONG ทั้ง 7 Indicator พร้อมเข้าออเดอร์ทันทีค่ะ!</i>"""
+            send_telegram(msg)
+
+def send_hourly_report(symbol):
+    """ส่งรายงานสรุปภาพรวมประจำชั่วโมง"""
+    clean_symbol = normalize_symbol(symbol)
+    short_term = analyze_symbol_data(clean_symbol, "Hour4")
+    long_term = analyze_symbol_data(clean_symbol, "Week1")
     
     if not short_term or not long_term:
         return
@@ -163,23 +214,40 @@ def analyze_and_notify(symbol):
     msg = f"""🚨 <b>MEXC Alert ({clean_symbol})</b>
 
 <b>วิเคราะห์ระยะสั้น 1-4 ชั่วโมง</b>
-{short_term}
+{format_report_text(short_term)}
 
 <b>วิเคราะห์ระยะยาว 1w-1m</b>
-{long_term}"""
+{format_report_text(long_term)}"""
     
     send_telegram(msg)
 
 def bot_loop():
-    send_telegram(f"🚀 <b>ผู้ช่วยเทรด MEXC</b> เฝ้ากราฟแบบ 7 Indicators (4H & 1W) เริ่มต้นทำงานแล้วค่ะ!")
+    global last_hourly_time
+    symbols_text = ", ".join([normalize_symbol(s) for s in SYMBOLS])
+    send_telegram(f"🚀 <b>ผู้ช่วยเทรด MEXC</b> เริ่มเฝ้ากราฟแบบ Real-time และรายงานรายชั่วโมง ({symbols_text}) เรียบร้อยแล้วค่ะ!")
     
+    # ส่งรายงานเริ่มต้นทันที 1 รอบ
+    for s in SYMBOLS:
+        send_hourly_report(s)
+        time.sleep(2)
+    last_hourly_time = time.time()
+
     while True:
-        for s in SYMBOLS:
-            analyze_and_notify(s)
-            time.sleep(5)
+        now = time.time()
         
-        # หน่วงเวลา 1 ชั่วโมงเพื่อเช็กกราฟรอบใหม่ (ป้องกันแจ้งเตือนรัวเกินไปสำหรับกราฟ 4H/1W)
-        time.sleep(3600) 
+        # 1. วนตรวจเช็กสัญญาณ LONG ด่วนเรียลไทม์ (เช็กทุก 30 วินาที)
+        for s in SYMBOLS:
+            check_instant_long_signal(s)
+            time.sleep(2)
+
+        # 2. ตรวจเช็กเวลาส่งรายงานสรุปรายชั่วโมง (ทุกๆ 3600 วินาที)
+        if now - last_hourly_time >= 3600:
+            for s in SYMBOLS:
+                send_hourly_report(s)
+                time.sleep(2)
+            last_hourly_time = time.time()
+
+        time.sleep(30)
 
 def start_bot_thread():
     global bot_started
@@ -187,12 +255,12 @@ def start_bot_thread():
         if not bot_started:
             bot_started = True
             threading.Thread(target=bot_loop, daemon=True).start()
-            print("[System] 7-Indicators Bot Loop started!", file=sys.stdout, flush=True)
+            print("[System] Real-time & Hourly Bot Loop started!", file=sys.stdout, flush=True)
 
 @app.route('/')
 def home():
     start_bot_thread()
-    return "MEXC 7-Indicators Bot is running 24/7!"
+    return "MEXC Real-time & Hourly Bot is running 24/7!"
 
 start_bot_thread()
 
