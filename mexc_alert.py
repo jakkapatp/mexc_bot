@@ -40,9 +40,9 @@ def send_telegram(message):
         print(f"[Telegram API Error]: {e}", file=sys.stderr, flush=True)
 
 def fetch_mexc_kline(symbol, interval):
-    """ดึงข้อมูลกราฟจาก MEXC Futures API โดยตัด underscore ออกเพื่อให้ตรงกับระบบ Futures"""
+    """ดึงข้อมูลกราฟจาก MEXC Futures API โดยใช้รูปแบบมาตรฐาน (มีขีดล่าง เช่น ETH_USDT)"""
     try:
-        clean_symbol = normalize_symbol(symbol).replace("_", "")
+        clean_symbol = normalize_symbol(symbol)
         url = f"https://contract.mexc.com/api/v1/contract/kline/{clean_symbol}?interval={interval}"
         res = requests.get(url, timeout=10).json()
         if res.get("success") and "data" in res:
@@ -61,7 +61,7 @@ def fetch_mexc_kline(symbol, interval):
 def get_daily_change_pct(symbol):
     """คำนวณ % การเปลี่ยนแปลงรายวันจาก Futures API"""
     try:
-        clean_symbol = normalize_symbol(symbol).replace("_", "")
+        clean_symbol = normalize_symbol(symbol)
         url = f"https://contract.mexc.com/api/v1/contract/kline/{clean_symbol}?interval=Day1"
         res = requests.get(url, timeout=5).json()
         if res.get("success") and "data" in res:
