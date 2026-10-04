@@ -79,17 +79,17 @@ def handle_telegram_commands():
                         
                     elif text == "/indicators":
                         ind_msg = (
-                            "<b>📊 รายชื่ออินดิเคเตอร์ที่ใช้ตรวจสอบ (10 ตัว) จัดตามกลุ่ม</b>\n"
-                            "<i>(กลุ่มที่ 1 ต้องสอดคล้องครบ 100% + คะแนนรวม 10 ตัวผ่าน 7/10 ขึ้นไป)</i>\n\n"
-                            "<b>🥇 กลุ่มที่ 1: แกนหลักด้านเทรนด์และโมเมนตัม</b>\n"
+                            "<b>📊 รายชื่ออินดิเคเตอร์ (10 ตัว)</b>\n"
+                            "<i>(กลุ่ม 1 ต้องสอดคล้อง 100% + ผ่าน 7/10 ขึ้นไป)</i>\n\n"
+                            "<b>🥇 กลุ่ม 1: เทรนด์ & โมเมนตัม</b>\n"
                             "• EMA 20\n"
                             "• MACD\n"
                             "• RSI\n\n"
-                            "<b>🥈 กลุ่มที่ 2: กลุ่มวัดกรอบราคา จุดกลับตัว และความผันผวน</b>\n"
+                            "<b>🥈 กลุ่ม 2: กรอบราคา & ความผันผวน</b>\n"
                             "• Bollinger Bands\n"
                             "• Parabolic SAR\n"
                             "• Stochastic Oscillator\n\n"
-                            "<b>กลุ่มที่ 3: กลุ่มอินดิเคเตอร์เสริมความคมชัดและวัดความเร็ว</b>\n"
+                            "<b>🥉 กลุ่ม 3: อินดิเคเตอร์เสริม</b>\n"
                             "• CCI 20\n"
                             "• Williams %R\n"
                             "• Awesome Oscillator (AO)\n"
@@ -100,11 +100,11 @@ def handle_telegram_commands():
                     elif text == "/help":
                         help_msg = (
                             "<b>📚 คู่มือใช้งานบอทเทรด MEXC</b>\n\n"
-                            "• <b>/add &lt;คู่เหรียญ&gt;</b> (เช่น /add BTC_USDT หรือ /add btc) เพื่อเพิ่มคู่เหรียญใหม่เข้าไปในระบบเฝ้าระวัง\n"
-                            "• <b>/remove &lt;คู่เหรียญ&gt;</b> (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญออก\n"
-                            "• <b>/list</b> เพื่อดูรายชื่อคู่เหรียญทั้งหมดที่บอทกำลังเฝ้าระวังอยู่ตอนนี้\n"
-                            "• <b>/indicators</b> เพื่อดูรายชื่ออินดิเคเตอร์แบ่งตาม 3 กลุ่ม\n"
-                            "• <b>/help</b> เพื่อดูคู่มือการใช้งาน"
+                            "• <b>/add &lt;คู่เหรียญ&gt;</b> (เช่น /add BTC_USDT) เพื่อเพิ่มคู่เหรียญ\n"
+                            "• <b>/remove &lt;คู่เหรียญ&gt;</b> (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญ\n"
+                            "• <b>/list</b> ดูรายชื่อคู่เหรียญทั้งหมด\n"
+                            "• <b>/indicators</b> ดูรายชื่ออินดิเคเตอร์\n"
+                            "• <b>/help</b> ดูคู่มือการใช้งาน"
                         )
                         send_telegram(help_msg)
                         
@@ -240,7 +240,7 @@ def analyze_symbol_data(symbol, interval):
     }
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: กลุ่มหลัก (EMA, MACD, RSI) ต้องครบ 3 ตัว + คะแนนรวม 10 ตัวตั้งแต่ 7 ขึ้นไป พร้อมจัดกลุ่มแสดงผล"""
+    """แจ้งเตือนด่วน: กลุ่มหลัก (EMA, MACD, RSI) ต้องครบ 3 ตัว + คะแนนรวม 10 ตัวตั้งแต่ 7 ขึ้นไป พร้อมจัดกลุ่มแสดงผลกระชับ"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
@@ -303,23 +303,23 @@ def check_instant_signal(symbol):
 แนวต้าน : {r1_fmt}
 <b>{action_label} : {emoji_dir} {p_fmt}</b>
 แนวรับ : {s1_fmt}
----------------------------------
-<b>🥇 กลุ่มที่ 1: แกนหลักด้านเทรนด์และโมเมนตัม</b>
+----------------------------
+<b>🥇 กลุ่ม 1: เทรนด์ & โมเมนตัม</b>
 • EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
 • MACD : {data['macd']:.6f} {data['macd_dir']}
 • RSI : {data['rsi']:.2f} {data['rsi_dir']}
 
-<b>🥈 กลุ่มที่ 2: กลุ่มวัดกรอบราคา จุดกลับตัว และความผันผวน</b>
+<b>🥈 กลุ่ม 2: กรอบราคา & ความผันผวน</b>
 • Bollinger : {data['bb']:,.4f} {data['bb_dir']}
 • SAR : {data['sar']:,.4f} {data['sar_dir']}
 • Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
 
-<b>กลุ่มที่ 3: กลุ่มอินดิเคเตอร์เสริมความคมชัดและวัดความเร็ว</b>
+<b>🥉 กลุ่ม 3: อินดิเคเตอร์เสริม</b>
 • CCI 20 : {data['cci']:.2f} {data['cci_dir']}
 • Williams %R : {data['willr']:.2f} {data['willr_dir']}
 • AO : {data['ao']:.4f} {data['ao_dir']}
 • Momentum : {data['mom']:.4f} {data['mom_dir']}
----------------------------------
+----------------------------
 📅 วันที่ : {time_str}"""
     send_telegram(msg)
 
