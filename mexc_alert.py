@@ -286,6 +286,9 @@ def check_instant_signal(symbol):
     }
     
     display_symbol = clean_symbol.replace("_", "/")
+    percentage = count_val * 10
+    bar_str = "I" * count_val + "-" * (10 - count_val)
+    
     action_label = "จุดเข้าซื้อ" if signal_type == "LONG" else "จุดเทขาย"
     p_fmt = f"${price:,.4f}" if price < 1 else f"${price:,.2f}"
     s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
@@ -293,7 +296,8 @@ def check_instant_signal(symbol):
 
     time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S")
 
-    msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ({count_val}/10)</b> 🔥
+    msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1M]</b>
+<b>สัญญาณ {signal_type} ({percentage}%) [{bar_str}]</b> 🔥
 <b>คู่เหรียญ: {display_symbol}</b>
 ราคาปัจจุบัน : {p_fmt}
 แนวต้าน : {r1_fmt}
