@@ -61,36 +61,39 @@ def handle_telegram_commands():
                         clean_s = normalize_symbol(raw_sym)
                         if clean_s not in SYMBOLS:
                             SYMBOLS.append(clean_s)
-                            send_telegram(f"✅ เพิ่มคู่เหรียญ <b>{clean_s}</b> เข้าสู่ระบบเรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join(SYMBOLS)}")
+                            send_telegram(f"✅ เพิ่มคู่เหรียญ <b>{clean_s.replace('_', '/')}</b> เข้าสู่ระบบเรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join([s.replace('_', '/') for s in SYMBOLS])}")
                         else:
-                            send_telegram(f"ℹ️ คู่เหรียญ <b>{clean_s}</b> มีอยู่ในรายการอยู่แล้วค่ะ")
+                            send_telegram(f"ℹ️ คู่เหรียญ <b>{clean_s.replace('_', '/')}</b> มีอยู่ในรายการอยู่แล้วค่ะ")
                             
                     elif text.startswith("/remove "):
                         raw_sym = text.replace("/remove", "").strip()
                         clean_s = normalize_symbol(raw_sym)
                         if clean_s in SYMBOLS:
                             SYMBOLS.remove(clean_s)
-                            send_telegram(f"🗑️ ลบคู่เหรียญ <b>{clean_s}</b> เรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join(SYMBOLS)}")
+                            send_telegram(f"🗑️ ลบคู่เหรียญ <b>{clean_s.replace('_', '/')}</b> เรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join([s.replace('_', '/') for s in SYMBOLS])}")
                         else:
-                            send_telegram(f"❌ ไม่พบเหรียญ <b>{clean_s}</b> ในรายการเฝ้าระวังค่ะ")
+                            send_telegram(f"❌ ไม่พบเหรียญ <b>{clean_s.replace('_', '/')}</b> ในรายการเฝ้าระวังค่ะ")
                             
                     elif text == "/list":
-                        send_telegram(f"📋 <b>รายชื่อคู่เหรียญเฝ้าระวังปัจจุบัน:</b>\n" + "\n".join([f"• {s}" for s in SYMBOLS]))
+                        send_telegram(f"📋 <b>รายชื่อคู่เหรียญเฝ้าระวังปัจจุบัน:</b>\n" + "\n".join([f"• {s.replace('_', '/')}" for s in SYMBOLS]))
                         
                     elif text == "/indicators":
                         ind_msg = (
-                            "<b>📊 รายชื่ออินดิเคเตอร์ที่ใช้ตรวจสอบ (10 ตัว)</b>\n"
-                            "<i>(ระบบจะแจ้งเตือนเมื่อสอดคล้องกันตั้งแต่ 7/10 ตัวขึ้นไป)</i>\n\n"
-                            "1. RSI (Relative Strength Index)\n"
-                            "2. Stochastic Oscillator\n"
-                            "3. Bollinger Bands\n"
-                            "4. Parabolic SAR\n"
-                            "5. EMA 20 (Exponential Moving Average)\n"
-                            "6. CCI 20 (Commodity Channel Index)\n"
-                            "7. MACD (Moving Average Convergence Divergence)\n"
-                            "8. Williams %R\n"
-                            "9. Awesome Oscillator (AO)\n"
-                            "10. Momentum (MOM)"
+                            "<b>📊 รายชื่ออินดิเคเตอร์ที่ใช้ตรวจสอบ (10 ตัว) จัดตามกลุ่ม</b>\n"
+                            "<i>(กลุ่มที่ 1 ต้องสอดคล้องครบ 100% + คะแนนรวม 10 ตัวผ่าน 7/10 ขึ้นไป)</i>\n\n"
+                            "<b>🥇 กลุ่มที่ 1: แกนหลักด้านเทรนด์และโมเมนตัม</b>\n"
+                            "• EMA 20\n"
+                            "• MACD\n"
+                            "• RSI\n\n"
+                            "<b>🥈 กลุ่มที่ 2: กลุ่มวัดกรอบราคา จุดกลับตัว และความผันผวน</b>\n"
+                            "• Bollinger Bands\n"
+                            "• Parabolic SAR\n"
+                            "• Stochastic Oscillator\n\n"
+                            "<b>กลุ่มที่ 3: กลุ่มอินดิเคเตอร์เสริมความคมชัดและวัดความเร็ว</b>\n"
+                            "• CCI 20\n"
+                            "• Williams %R\n"
+                            "• Awesome Oscillator (AO)\n"
+                            "• Momentum (MOM)"
                         )
                         send_telegram(ind_msg)
                         
@@ -100,7 +103,7 @@ def handle_telegram_commands():
                             "• <b>/add &lt;คู่เหรียญ&gt;</b> (เช่น /add BTC_USDT หรือ /add btc) เพื่อเพิ่มคู่เหรียญใหม่เข้าไปในระบบเฝ้าระวัง\n"
                             "• <b>/remove &lt;คู่เหรียญ&gt;</b> (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญออก\n"
                             "• <b>/list</b> เพื่อดูรายชื่อคู่เหรียญทั้งหมดที่บอทกำลังเฝ้าระวังอยู่ตอนนี้\n"
-                            "• <b>/indicators</b> เพื่อดูรายชื่ออินดิเคเตอร์ทั้ง 10 ตัวที่ใช้ตรวจสอบ\n"
+                            "• <b>/indicators</b> เพื่อดูรายชื่ออินดิเคเตอร์แบ่งตาม 3 กลุ่ม\n"
                             "• <b>/help</b> เพื่อดูคู่มือการใช้งาน"
                         )
                         send_telegram(help_msg)
@@ -196,7 +199,9 @@ def analyze_symbol_data(symbol, interval):
             down_count += 1
             return "⬇️"
 
-    rsi_dir = check_dir(rsi > 50)
+    rsi_is_up = rsi > 50
+    rsi_dir = check_dir(rsi_is_up)
+    
     stoch_dir = check_dir(stoch_val > 50)
     bb_dir = check_dir(price > bb_val)
     
@@ -207,22 +212,27 @@ def analyze_symbol_data(symbol, interval):
         sar_val = sar_s if pd.notna(sar_s) else price
         sar_dir = check_dir(False)
         
-    ema_dir = check_dir(price > ema)
+    ema_is_up = price > ema
+    ema_dir = check_dir(ema_is_up)
+    
     cci_dir = check_dir(cci > 0)
-    macd_dir = check_dir(macd_val > 0)
+    
+    macd_is_up = macd_val > 0
+    macd_dir = check_dir(macd_is_up)
+    
     willr_dir = check_dir(willr_val > -50)
     ao_dir = check_dir(ao_val > 0)
     mom_dir = check_dir(mom_val > 0)
 
     return {
         "price": price, "s1": s1, "r1": r1,
-        "rsi": rsi, "rsi_dir": rsi_dir,
+        "rsi": rsi, "rsi_dir": rsi_dir, "rsi_is_up": rsi_is_up,
         "stoch": stoch_val, "stoch_dir": stoch_dir,
         "bb": bb_val, "bb_dir": bb_dir,
         "sar": sar_val, "sar_dir": sar_dir,
-        "ema": ema, "ema_dir": ema_dir,
+        "ema": ema, "ema_dir": ema_dir, "ema_is_up": ema_is_up,
         "cci": cci, "cci_dir": cci_dir,
-        "macd": macd_val, "macd_dir": macd_dir,
+        "macd": macd_val, "macd_dir": macd_dir, "macd_is_up": macd_is_up,
         "willr": willr_val, "willr_dir": willr_dir,
         "ao": ao_val, "ao_dir": ao_dir,
         "mom": mom_val, "mom_dir": mom_dir,
@@ -230,7 +240,7 @@ def analyze_symbol_data(symbol, interval):
     }
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) 10 ตัว และส่งสัญญาณเมื่อสอดคล้องกันตั้งแต่ 7 ตัวขึ้นไป"""
+    """แจ้งเตือนด่วน: กลุ่มหลัก (EMA, MACD, RSI) ต้องครบ 3 ตัว + คะแนนรวม 10 ตัวตั้งแต่ 7 ขึ้นไป พร้อมจัดกลุ่มแสดงผล"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
@@ -240,11 +250,15 @@ def check_instant_signal(symbol):
     count_val = 0
     emoji_dir = ""
     
-    if data['up_count'] >= 7:
+    # กลุ่มที่ 1 ต้องไปในทางเดียวกัน 100%
+    group1_long = data['rsi_is_up'] and data['ema_is_up'] and data['macd_is_up']
+    group1_short = (not data['rsi_is_up']) and (not data['ema_is_up']) and (not data['macd_is_up'])
+
+    if group1_long and data['up_count'] >= 7:
         signal_type = "LONG"
         count_val = data['up_count']
         emoji_dir = "🟢"
-    elif data['down_count'] >= 7:
+    elif group1_short and data['down_count'] >= 7:
         signal_type = "SHORT"
         count_val = data['down_count']
         emoji_dir = "🔴"
@@ -271,6 +285,7 @@ def check_instant_signal(symbol):
         "signal": signal_type
     }
     
+    display_symbol = clean_symbol.replace("_", "/")
     action_label = "จุดเข้าซื้อ" if signal_type == "LONG" else "จุดเทขาย"
     p_fmt = f"${price:,.4f}" if price < 1 else f"${price:,.2f}"
     s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
@@ -279,19 +294,24 @@ def check_instant_signal(symbol):
     time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S")
 
     msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ({count_val}/10)</b> 🔥
-<b>คู่เหรียญ: MEXC ({clean_symbol})</b>
+<b>คู่เหรียญ: {display_symbol}</b>
 ราคาปัจจุบัน : {p_fmt}
 แนวต้าน : {r1_fmt}
 <b>{action_label} : {emoji_dir} {p_fmt}</b>
 แนวรับ : {s1_fmt}
 ---------------------------------
+<b>🥇 กลุ่มที่ 1: แกนหลักด้านเทรนด์และโมเมนตัม</b>
+• EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
+• MACD : {data['macd']:.6f} {data['macd_dir']}
 • RSI : {data['rsi']:.2f} {data['rsi_dir']}
-• Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
+
+<b>🥈 กลุ่มที่ 2: กลุ่มวัดกรอบราคา จุดกลับตัว และความผันผวน</b>
 • Bollinger : {data['bb']:,.4f} {data['bb_dir']}
 • SAR : {data['sar']:,.4f} {data['sar_dir']}
-• EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
+• Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
+
+<b>กลุ่มที่ 3: กลุ่มอินดิเคเตอร์เสริมความคมชัดและวัดความเร็ว</b>
 • CCI 20 : {data['cci']:.2f} {data['cci_dir']}
-• MACD : {data['macd']:.6f} {data['macd_dir']}
 • Williams %R : {data['willr']:.2f} {data['willr_dir']}
 • AO : {data['ao']:.4f} {data['ao_dir']}
 • Momentum : {data['mom']:.4f} {data['mom_dir']}
