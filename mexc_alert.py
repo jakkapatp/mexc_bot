@@ -77,12 +77,30 @@ def handle_telegram_commands():
                     elif text == "/list":
                         send_telegram(f"📋 <b>รายชื่อคู่เหรียญเฝ้าระวังปัจจุบัน:</b>\n" + "\n".join([f"• {s}" for s in SYMBOLS]))
                         
+                    elif text == "/indicators":
+                        ind_msg = (
+                            "<b>📊 รายชื่ออินดิเคเตอร์ที่ใช้ตรวจสอบ (10 ตัว)</b>\n"
+                            "<i>(ระบบจะแจ้งเตือนเมื่อสอดคล้องกันตั้งแต่ 7/10 ตัวขึ้นไป)</i>\n\n"
+                            "1. RSI (Relative Strength Index)\n"
+                            "2. Stochastic Oscillator\n"
+                            "3. Bollinger Bands\n"
+                            "4. Parabolic SAR\n"
+                            "5. EMA 20 (Exponential Moving Average)\n"
+                            "6. CCI 20 (Commodity Channel Index)\n"
+                            "7. MACD (Moving Average Convergence Divergence)\n"
+                            "8. Williams %R\n"
+                            "9. Awesome Oscillator (AO)\n"
+                            "10. Momentum (MOM)"
+                        )
+                        send_telegram(ind_msg)
+                        
                     elif text == "/help":
                         help_msg = (
                             "<b>📚 คู่มือใช้งานบอทเทรด MEXC</b>\n\n"
                             "• <b>/add &lt;คู่เหรียญ&gt;</b> (เช่น /add BTC_USDT หรือ /add btc) เพื่อเพิ่มคู่เหรียญใหม่เข้าไปในระบบเฝ้าระวัง\n"
                             "• <b>/remove &lt;คู่เหรียญ&gt;</b> (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญออก\n"
                             "• <b>/list</b> เพื่อดูรายชื่อคู่เหรียญทั้งหมดที่บอทกำลังเฝ้าระวังอยู่ตอนนี้\n"
+                            "• <b>/indicators</b> เพื่อดูรายชื่ออินดิเคเตอร์ทั้ง 10 ตัวที่ใช้ตรวจสอบ\n"
                             "• <b>/help</b> เพื่อดูคู่มือการใช้งาน"
                         )
                         send_telegram(help_msg)
@@ -111,7 +129,7 @@ def fetch_mexc_kline(symbol, interval):
 
 def analyze_symbol_data(symbol, interval):
     df = fetch_mexc_kline(symbol, interval)
-    if df is None or len(df) < 30:
+    if df is None or len(df) < 35:
         return None
 
     df['RSI'] = ta.rsi(df['close'], length=14)
@@ -137,6 +155,15 @@ def analyze_symbol_data(symbol, interval):
     macd_h_col = [c for c in macd.columns if 'MACDh' in c]
     df['MACD_H'] = macd[macd_h_col[0]] if macd_h_col else 0.0
 
+    willr = ta.willr(df['high'], df['low'], df['close'], length=14)
+    df['WILLR'] = willr if isinstance(willr, pd.Series) else -50.0
+
+    ao = ta.ao(df['high'], df['low'])
+    df['AO'] = ao if isinstance(ao, pd.Series) else 0.0
+
+    mom = ta.mom(df['close'], length=10)
+    df['MOM'] = mom if isinstance(mom, pd.Series) else 0.0
+
     curr = df.iloc[-1]
     prev = df.iloc[-2]
 
@@ -153,6 +180,9 @@ def analyze_symbol_data(symbol, interval):
     ema = curr['EMA'] if pd.notna(curr['EMA']) else price
     cci = curr['CCI'] if pd.notna(curr['CCI']) else 0.0
     macd_val = curr['MACD_H'] if pd.notna(curr['MACD_H']) else 0.0
+    willr_val = curr['WILLR'] if pd.notna(curr['WILLR']) else -50.0
+    ao_val = curr['AO'] if pd.notna(curr['AO']) else 0.0
+    mom_val = curr['MOM'] if pd.notna(curr['MOM']) else 0.0
 
     up_count = 0
     down_count = 0
@@ -180,6 +210,9 @@ def analyze_symbol_data(symbol, interval):
     ema_dir = check_dir(price > ema)
     cci_dir = check_dir(cci > 0)
     macd_dir = check_dir(macd_val > 0)
+    willr_dir = check_dir(willr_val > -50)
+    ao_dir = check_dir(ao_val > 0)
+    mom_dir = check_dir(mom_val > 0)
 
     return {
         "price": price, "s1": s1, "r1": r1,
@@ -190,11 +223,14 @@ def analyze_symbol_data(symbol, interval):
         "ema": ema, "ema_dir": ema_dir,
         "cci": cci, "cci_dir": cci_dir,
         "macd": macd_val, "macd_dir": macd_dir,
+        "willr": willr_val, "willr_dir": willr_dir,
+        "ao": ao_val, "ao_dir": ao_dir,
+        "mom": mom_val, "mom_dir": mom_dir,
         "up_count": up_count, "down_count": down_count
     }
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) ครบ 7 ตัว พร้อมเช็คเงื่อนไขราคาเทียบแนวรับ-แนวต้านรอบแรก"""
+    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) 10 ตัว และส่งสัญญาณเมื่อสอดคล้องกันตั้งแต่ 7 ตัวขึ้นไป"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
@@ -204,11 +240,11 @@ def check_instant_signal(symbol):
     count_val = 0
     emoji_dir = ""
     
-    if data['up_count'] == 7:
+    if data['up_count'] >= 7:
         signal_type = "LONG"
         count_val = data['up_count']
         emoji_dir = "🟢"
-    elif data['down_count'] == 7:
+    elif data['down_count'] >= 7:
         signal_type = "SHORT"
         count_val = data['down_count']
         emoji_dir = "🔴"
@@ -240,10 +276,9 @@ def check_instant_signal(symbol):
     s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
     r1_fmt = f"${r1:,.4f}" if r1 < 1 else f"${r1:,.2f}"
 
-    # ดึงวันที่และเวลาปัจจุบันในรูปแบบ dd/mm/yyyy เวลา : 00:00:00 (ไม่มี 24h แล้ว)
     time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S")
 
-    msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ครบถ้วน ({count_val}/7)</b> 🔥
+    msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ({count_val}/10)</b> 🔥
 <b>คู่เหรียญ: MEXC ({clean_symbol})</b>
 ราคาปัจจุบัน : {p_fmt}
 แนวต้าน : {r1_fmt}
@@ -257,16 +292,19 @@ def check_instant_signal(symbol):
 • EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
 • CCI 20 : {data['cci']:.2f} {data['cci_dir']}
 • MACD : {data['macd']:.6f} {data['macd_dir']}
+• Williams %R : {data['willr']:.2f} {data['willr_dir']}
+• AO : {data['ao']:.4f} {data['ao_dir']}
+• Momentum : {data['mom']:.4f} {data['mom_dir']}
 ---------------------------------
 📅 วันที่ : {time_str}"""
     send_telegram(msg)
 
 def bot_loop():
     while True:
-        # 1. ตรวจสอบคำสั่งจากแชท Telegram ทุกๆ รอบลูป (เช่น /add, /remove, /list, /help)
+        # 1. ตรวจสอบคำสั่งจากแชท Telegram ทุกๆ รอบลูป (เช่น /add, /remove, /list, /indicators, /help)
         handle_telegram_commands()
 
-        # 2. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m (ครบ 7 ตัว) ทุกๆ 30 วินาที พร้อมเงื่อนไขเช็คราคา
+        # 2. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m ทุกๆ 30 วินาที
         current_symbols = list(SYMBOLS)
         for s in current_symbols:
             check_instant_signal(s)
