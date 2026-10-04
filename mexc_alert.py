@@ -63,7 +63,7 @@ def handle_telegram_commands():
                             SYMBOLS.append(clean_s)
                             send_telegram(f"✅ เพิ่มคู่เหรียญ <b>{clean_s.replace('_', '/')}</b> เข้าสู่ระบบเรียบร้อยค่ะ!\n📋 รายชื่อปัจจุบัน: {', '.join([s.replace('_', '/') for s in SYMBOLS])}")
                         else:
-                            send_telegram(f"ℹ️ คู่เหรียญ <b>{clean_s.replace('_', '/')}</b> มีอยู่ในรายการอยู่แล้วค่ะ")
+                            send_telegram(f"ℹ️️ คู่เหรียญ <b>{clean_s.replace('_', '/')}</b> มีอยู่ในรายการอยู่แล้วค่ะ")
                             
                     elif text.startswith("/remove "):
                         raw_sym = text.replace("/remove", "").strip()
@@ -240,7 +240,7 @@ def analyze_symbol_data(symbol, interval):
     }
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: กลุ่มหลัก (EMA, MACD, RSI) ต้องครบ 3 ตัว + คะแนนรวม 10 ตัวตั้งแต่ 7 ขึ้นไป พร้อมเปลี่ยนเส้นแบ่งเป็นเส้นทึบ"""
+    """แจ้งเตือนด่วน: ปรับหัวข้อและเส้นแบ่งให้เรียบร้อย"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
@@ -296,14 +296,14 @@ def check_instant_signal(symbol):
 
     time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S")
 
-    msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1M]</b>
-<b>สัญญาณ {signal_type} ({percentage}%) [{bar_str}]</b> 🔥
+    msg = f"""🔥🔥🔥 <b>แจ้งเตือนด่วน</b> 🔥🔥🔥
+<b>สัญญาณ {signal_type} ({percentage}%) [{bar_str}]</b>
 <b>คู่เหรียญ: {display_symbol}</b>
 ราคาปัจจุบัน : {p_fmt}
 แนวต้าน : {r1_fmt}
 <b>{action_label} : {emoji_dir} {p_fmt}</b>
 แนวรับ : {s1_fmt}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━
 <b>🥇 กลุ่ม 1: เทรนด์ & โมเมนตัม</b>
 • EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
 • MACD : {data['macd']:.6f} {data['macd_dir']}
@@ -319,7 +319,7 @@ def check_instant_signal(symbol):
 • Williams %R : {data['willr']:.2f} {data['willr_dir']}
 • AO : {data['ao']:.4f} {data['ao_dir']}
 • Momentum : {data['mom']:.4f} {data['mom_dir']}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━
 📅 วันที่ : {time_str}"""
     send_telegram(msg)
 
