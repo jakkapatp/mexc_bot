@@ -240,7 +240,7 @@ def analyze_symbol_data(symbol, interval):
     }
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: กลุ่มหลัก (EMA, MACD, RSI) ต้องครบ 3 ตัว + คะแนนรวม 10 ตัวตั้งแต่ 7 ขึ้นไป พร้อมจัดกลุ่มแสดงผลกระชับ"""
+    """แจ้งเตือนด่วน: กลุ่มหลัก (EMA, MACD, RSI) ต้องครบ 3 ตัว + คะแนนรวม 10 ตัวตั้งแต่ 7 ขึ้นไป พร้อมเปลี่ยนเส้นแบ่งเป็นเส้นทึบ"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
@@ -303,7 +303,7 @@ def check_instant_signal(symbol):
 แนวต้าน : {r1_fmt}
 <b>{action_label} : {emoji_dir} {p_fmt}</b>
 แนวรับ : {s1_fmt}
-----------------------------
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 <b>🥇 กลุ่ม 1: เทรนด์ & โมเมนตัม</b>
 • EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
 • MACD : {data['macd']:.6f} {data['macd_dir']}
@@ -319,7 +319,7 @@ def check_instant_signal(symbol):
 • Williams %R : {data['willr']:.2f} {data['willr_dir']}
 • AO : {data['ao']:.4f} {data['ao_dir']}
 • Momentum : {data['mom']:.4f} {data['mom_dir']}
-----------------------------
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📅 วันที่ : {time_str}"""
     send_telegram(msg)
 
