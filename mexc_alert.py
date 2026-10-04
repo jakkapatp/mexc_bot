@@ -22,7 +22,7 @@ SYMBOLS = ["ETH_USDT", "DOGE_USDT", "SOL_USDT", "XRP_USDT", "TRUMP_USDT", "ONE_U
 bot_started = False
 lock = threading.Lock()
 
-last_instant_alerts = {}  # {symbol: timestamp}
+last_alert_sent = {}      # {symbol: {"price": ..., "s1": ..., "r1": ..., "signal": ...}} สำหรับเทียบเงื่อนไขราคา
 last_update_id = 0        # สำหรับเช็คข้อความคำสั่งจาก Telegram
 
 def normalize_symbol(symbol):
@@ -76,6 +76,16 @@ def handle_telegram_commands():
                     elif text == "/list":
                         send_telegram(f"📋 <b>รายชื่อคู่เหรียญเฝ้าระวังปัจจุบัน:</b>\n" + "\n".join([f"• {s}" for s in SYMBOLS]))
                         
+                    elif text == "/help":
+                        help_msg = (
+                            "<b>📚 คู่มือใช้งานบอทเทรด MEXC</b>\n\n"
+                            "• <b>/add &lt;คู่เหรียญ&gt;</b> (เช่น /add BTC_USDT หรือ /add btc) เพื่อเพิ่มคู่เหรียญใหม่เข้าไปในระบบเฝ้าระวัง\n"
+                            "• <b>/remove &lt;คู่เหรียญ&gt;</b> (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญออก\n"
+                            "• <b>/list</b> เพื่อดูรายชื่อคู่เหรียญทั้งหมดที่บอทกำลังเฝ้าระวังอยู่ตอนนี้\n"
+                            "• <b>/help</b> เพื่อดูคู่มือการใช้งาน"
+                        )
+                        send_telegram(help_msg)
+                        
     except Exception as e:
         print(f"[Command Error]: {e}", file=sys.stderr, flush=True)
 
@@ -117,7 +127,7 @@ def get_daily_change_pct(symbol):
     return 0.0
 
 def get_startup_message():
-    """สร้างข้อความเริ่มต้นแสดง % รายวัน พร้อมคู่มือใช้งานต่อท้ายในข้อความเดียวกัน"""
+    """สร้างข้อความเริ่มต้นแสดง % รายวัน"""
     lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟแบบ Real-time คู่เทรดดังนี้</b>"]
     for s in SYMBOLS:
         clean_s = normalize_symbol(s)
@@ -127,14 +137,6 @@ def get_startup_message():
         else:
             pct_str = f"🟢 +{pct:.2f}%" if pct > 0 else f"🟢 {pct:.2f}%"
         lines.append(f"{clean_s}   {pct_str}")
-    
-    # ต่อด้วยคู่มือใช้งานในข้อความเดียวกันทันทีตามที่มาร์คไว้
-    lines.append("------------------------------")
-    lines.append("<b>คู่มือใช้งาน</b>")
-    lines.append("/add &lt;คู่เหรียญ&gt; (เช่น /add BTC_USDT หรือ /add btc) เพื่อเพิ่มคู่เหรียญใหม่เข้าไปในระบบเฝ้าระวัง")
-    lines.append("/remove &lt;คู่เหรียญ&gt; (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญออก")
-    lines.append("/list เพื่อดูรายชื่อคู่เหรียญทั้งหมดที่บอทกำลังเฝ้าระวังอยู่ตอนนี้")
-    
     return "\n".join(lines)
 
 def analyze_symbol_data(symbol, interval):
@@ -222,7 +224,7 @@ def analyze_symbol_data(symbol, interval):
     }
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) และต้องครบ 7 ตัว (= 7)"""
+    """แจ้งเตือนด่วน: วิเคราะห์กราฟ 1w-1m (Week1) ครบ 7 ตัว พร้อมเช็คเงื่อนไขราคาเทียบแนวรับ-แนวต้านรอบแรก"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
@@ -243,17 +245,32 @@ def check_instant_signal(symbol):
     else:
         return
 
-    now = time.time()
-    last_time = last_instant_alerts.get(clean_symbol, 0)
-    if now - last_time > 900: # ป้องกันส่งซ้ำภายใน 15 นาที
-        last_instant_alerts[clean_symbol] = now
-        
-        action_label = "จุดเข้าซื้อ" if signal_type == "LONG" else "จุดเทขาย"
-        p_fmt = f"${data['price']:,.4f}" if data['price'] < 1 else f"${data['price']:,.2f}"
-        s1_fmt = f"${data['s1']:,.4f}" if data['s1'] < 1 else f"${data['s1']:,.2f}"
-        r1_fmt = f"${data['r1']:,.4f}" if data['r1'] < 1 else f"${data['r1']:,.2f}"
+    price = data['price']
+    s1 = data['s1']
+    r1 = data['r1']
 
-        msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ครบถ้วน ({count_val}/7)</b> 🔥
+    # เงื่อนไข: เทียบราคาจากแจ้งเตือนรอบแรก หากค่าไม่ถึงแนวต้าน (LONG) หรือแนวรับ (SHORT) ไม่ต้องแจ้งเตือน
+    prev = last_alert_sent.get(clean_symbol)
+    if prev:
+        if signal_type == "LONG" and price < prev['r1']:
+            return
+        elif signal_type == "SHORT" and price > prev['s1']:
+            return
+
+    # บันทึกข้อมูลราคาและแนวรับ/แนวต้านของรอบนี้ไว้เทียบในรอบถัดไป
+    last_alert_sent[clean_symbol] = {
+        "price": price,
+        "s1": s1,
+        "r1": r1,
+        "signal": signal_type
+    }
+    
+    action_label = "จุดเข้าซื้อ" if signal_type == "LONG" else "จุดเทขาย"
+    p_fmt = f"${price:,.4f}" if price < 1 else f"${price:,.2f}"
+    s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
+    r1_fmt = f"${r1:,.4f}" if r1 < 1 else f"${r1:,.2f}"
+
+    msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ครบถ้วน ({count_val}/7)</b> 🔥
 <b>คู่เหรียญ: MEXC ({clean_symbol})</b>
 🎯 <b>{action_label}: {emoji_dir} {p_fmt}</b>
 
@@ -270,17 +287,17 @@ def check_instant_signal(symbol):
 ---------------------------------
 💡 <i>อินดิเคเตอร์ Timeframe 1w-1m สอดคล้องกันครบ 7/7 ตัวฝั่ง {signal_type} พร้อมลุยทันทีค่ะ!</i>
 <b>{action_label}: {emoji_dir} {p_fmt}</b>"""
-        send_telegram(msg)
+    send_telegram(msg)
 
 def bot_loop():
     startup_msg = get_startup_message()
     send_telegram(startup_msg)
 
     while True:
-        # 1. ตรวจสอบคำสั่งจากแชท Telegram ทุกๆ รอบลูป (เช่น /add, /remove, /list)
+        # 1. ตรวจสอบคำสั่งจากแชท Telegram ทุกๆ รอบลูป (เช่น /add, /remove, /list, /help)
         handle_telegram_commands()
 
-        # 2. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m (ครบ 7 ตัว) ทุกๆ 30 วินาที
+        # 2. ตรวจสอบสัญญาณด่วนเรียลไทม์ 1w-1m (ครบ 7 ตัว) ทุกๆ 30 วินาที พร้อมเงื่อนไขเช็คราคา
         current_symbols = list(SYMBOLS)
         for s in current_symbols:
             check_instant_signal(s)
