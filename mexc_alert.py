@@ -276,9 +276,10 @@ def check_instant_signal(symbol):
 
     msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ครบถ้วน ({count_val}/7)</b> 🔥
 <b>คู่เหรียญ: MEXC ({clean_symbol})</b>
-แนวรับ : {s1_fmt}
+ราคาปัจจุบัน : {emoji_dir} {p_fmt}
 แนวต้าน : {r1_fmt}
-<b>{action_label} : {emoji_dir} {p_fmt}</b>
+<b>{action_label} : {p_fmt}</b>
+แนวรับ : {s1_fmt}
 ---------------------------------
 • RSI : {data['rsi']:.2f} {data['rsi_dir']}
 • Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
