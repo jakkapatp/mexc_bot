@@ -6,6 +6,7 @@ import requests
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
+from datetime import datetime
 from flask import Flask
 
 sys.stdout.reconfigure(line_buffering=True)
@@ -270,12 +271,14 @@ def check_instant_signal(symbol):
     s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
     r1_fmt = f"${r1:,.4f}" if r1 < 1 else f"${r1:,.2f}"
 
+    # ดึงวันที่และเวลาปัจจุบันในรูปแบบ dd/mm/yyyy เวลา : 00:00:00 (24h)
+    time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S (24h)")
+
     msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ครบถ้วน ({count_val}/7)</b> 🔥
 <b>คู่เหรียญ: MEXC ({clean_symbol})</b>
-🎯 <b>{action_label}: {emoji_dir} {p_fmt}</b>
-
 แนวรับ : {s1_fmt}
 แนวต้าน : {r1_fmt}
+<b>{action_label} : {emoji_dir} {p_fmt}</b>
 ---------------------------------
 • RSI : {data['rsi']:.2f} {data['rsi_dir']}
 • Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
@@ -285,8 +288,7 @@ def check_instant_signal(symbol):
 • CCI 20 : {data['cci']:.2f} {data['cci_dir']}
 • MACD : {data['macd']:.6f} {data['macd_dir']}
 ---------------------------------
-💡 <i>อินดิเคเตอร์ Timeframe 1w-1m สอดคล้องกันครบ 7/7 ตัวฝั่ง {signal_type} พร้อมลุยทันทีค่ะ!</i>
-<b>{action_label}: {emoji_dir} {p_fmt}</b>"""
+📅 วันที่ : {time_str}"""
     send_telegram(msg)
 
 def bot_loop():
