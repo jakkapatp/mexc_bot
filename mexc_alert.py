@@ -109,37 +109,6 @@ def fetch_mexc_kline(symbol, interval):
         print(f"[MEXC API Error - {symbol}]: {e}", file=sys.stderr, flush=True)
     return None
 
-def get_daily_change_pct(symbol):
-    """คำนวณ % การเปลี่ยนแปลงรายวันจาก API"""
-    try:
-        clean_symbol = normalize_symbol(symbol)
-        url = f"https://contract.mexc.com/api/v1/contract/kline/{clean_symbol}?interval=Day1"
-        res = requests.get(url, timeout=5).json()
-        if res.get("success") and "data" in res:
-            data = res["data"]
-            if "close" in data and len(data["close"]) >= 2:
-                closes = [float(x) for x in data["close"]]
-                prev_close = closes[-2]
-                curr_close = closes[-1]
-                pct = ((curr_close - prev_close) / prev_close) * 100
-                return pct
-    except Exception as e:
-        print(f"[Daily Change Error - {symbol}]: {e}", file=sys.stderr, flush=True)
-    return 0.0
-
-def get_startup_message():
-    """สร้างข้อความเริ่มต้นแสดง % รายวัน"""
-    lines = ["<b>ผู้ช่วยเทรด กำลังวิเคราะห์กราฟแบบ Real-time คู่เทรดดังนี้</b>"]
-    for s in SYMBOLS:
-        clean_s = normalize_symbol(s)
-        pct = get_daily_change_pct(clean_s)
-        if pct < 0:
-            pct_str = f"🔴 {pct:.2f}%"
-        else:
-            pct_str = f"🟢 +{pct:.2f}%" if pct > 0 else f"🟢 {pct:.2f}%"
-        lines.append(f"{clean_s}   {pct_str}")
-    return "\n".join(lines)
-
 def analyze_symbol_data(symbol, interval):
     df = fetch_mexc_kline(symbol, interval)
     if df is None or len(df) < 30:
@@ -271,14 +240,14 @@ def check_instant_signal(symbol):
     s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
     r1_fmt = f"${r1:,.4f}" if r1 < 1 else f"${r1:,.2f}"
 
-    # ดึงวันที่และเวลาปัจจุบันในรูปแบบ dd/mm/yyyy เวลา : 00:00:00 (24h)
-    time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S (24h)")
+    # ดึงวันที่และเวลาปัจจุบันในรูปแบบ dd/mm/yyyy เวลา : 00:00:00 (ไม่มี 24h แล้ว)
+    time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S")
 
     msg = f"""🔥 <b>[แจ้งเตือนด่วน 1w-1m] สัญญาณ {signal_type} ครบถ้วน ({count_val}/7)</b> 🔥
 <b>คู่เหรียญ: MEXC ({clean_symbol})</b>
-ราคาปัจจุบัน : {emoji_dir} {p_fmt}
+ราคาปัจจุบัน : {p_fmt}
 แนวต้าน : {r1_fmt}
-<b>{action_label} : {p_fmt}</b>
+<b>{action_label} : {emoji_dir} {p_fmt}</b>
 แนวรับ : {s1_fmt}
 ---------------------------------
 • RSI : {data['rsi']:.2f} {data['rsi_dir']}
@@ -293,9 +262,6 @@ def check_instant_signal(symbol):
     send_telegram(msg)
 
 def bot_loop():
-    startup_msg = get_startup_message()
-    send_telegram(startup_msg)
-
     while True:
         # 1. ตรวจสอบคำสั่งจากแชท Telegram ทุกๆ รอบลูป (เช่น /add, /remove, /list, /help)
         handle_telegram_commands()
