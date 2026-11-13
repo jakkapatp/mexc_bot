@@ -20,10 +20,11 @@ CHAT_ID = "8876853259"
 # รายชื่อคีย์เวิร์ดสำหรับคัดแยกเหรียญมีมยอดฮิต
 MEME_KEYWORDS = ["DOGE", "SHIB", "PEPE", "FLOKI", "BONK", "TRUMP", "BOME", "NEIRO", "WIF", "PNUT", "GOAT", "MOODENG", "MEME", "CHILLGUY", "BTT", "BABYDOGE", "PORK", "SUNDOG"]
 
-# ตัวแปรเก็บรายชื่อเหรียญแบบไดนามิก
-TOP10_SYMBOLS = []
-MEME_SYMBOLS = []
-SYMBOLS = []
+# กำหนดค่าเริ่มต้น (Fallback Defaults) ป้องกันกรณี API ดึงข้อมูลช้าหรือไม่สำเร็จ
+DEFAULT_TOP10 = ["BTC_USDT", "ETH_USDT", "SOL_USDT", "XRP_USDT", "BNB_USDT", "ADA_USDT", "AVAX_USDT", "LINK_USDT", "SUI_USDT", "NEAR_USDT"]
+TOP10_SYMBOLS = list(DEFAULT_TOP10)
+MEME_SYMBOLS = ["DOGE_USDT", "SHIB_USDT", "PEPE_USDT", "TRUMP_USDT", "FLOKI_USDT", "BONK_USDT"]
+SYMBOLS = list(set(TOP10_SYMBOLS + MEME_SYMBOLS))
 
 bot_started = False
 lock = threading.Lock()
@@ -288,4 +289,109 @@ def analyze_symbol_data(symbol, interval):
     
     willr_dir = check_dir(willr_val > -50)
     ao_dir = check_dir(ao_val > 0)
-    mom_dir = check_dir(mom_val
+    mom_dir = check_dir(mom_val > 0)
+
+    return {
+        "price": price, "s1": s1, "r1": r1,
+        "rsi": rsi, "rsi_dir": rsi_dir, "rsi_is_up": rsi_is_up,
+        "stoch": stoch_val, "stoch_dir": stoch_dir,
+        "bb": bb_val, "bb_dir": bb_dir,
+        "sar": sar_val, "sar_dir": sar_dir,
+        "ema": ema, "ema_dir": ema_dir, "ema_is_up": ema_is_up,
+        "cci": cci, "cci_dir": cci_dir,
+        "macd": macd_val, "macd_dir": macd_dir, "macd_is_up": macd_is_up,
+        "willr": willr_val, "willr_dir": willr_dir,
+        "ao": ao_val, "ao_dir": ao_dir,
+        "mom": mom_val, "mom_dir": mom_dir,
+        "up_count": up_count, "down_count": down_count
+    }
+
+def check_instant_signal(symbol):
+    """แจ้งเตือนด่วน: Top 10 Volume บล็อก SHORT อย่างเด็ดขาด (ใช้การเช็กทั้งจาก TOP10_SYMBOLS และ DEFAULT_TOP10 ป้องกันพลาด)"""
+    clean_symbol = normalize_symbol(symbol)
+    data = analyze_symbol_data(clean_symbol, "Week1")
+    if not data:
+        return
+
+    signal_type = None
+    count_val = 0
+    emoji_dir = ""
+    
+    group1_long = data['rsi_is_up'] and data['ema_is_up'] and data['macd_is_up']
+    group1_short = (not data['rsi_is_up']) and (not data['ema_is_up']) and (not data['macd_is_up'])
+
+    normalized_top10 = [normalize_symbol(s) for s in TOP10_SYMBOLS]
+    normalized_default10 = [normalize_symbol(s) for s in DEFAULT_TOP10]
+    
+    # เช็กว่าเป็น Top 10 Volume หรือไม่ (เช็กทั้งจากที่ดึงสดและค่าตั้งต้นสำรอง)
+    is_top10 = (clean_symbol in normalized_top10) or (clean_symbol in normalized_default10)
+
+    if group1_long and data['up_count'] >= 7:
+        signal_type = "LONG"
+        count_val = data['up_count']
+        emoji_dir = "🟢"
+    elif group1_short and data['down_count'] >= 7:
+        # ถ้ารวมอยู่ในกลุ่ม Top 10 Volume ห้ามแจ้งเตือน SHORT เด็ดขาด บล็อกทันที
+        if is_top10:
+            return
+        signal_type = "SHORT"
+        count_val = data['down_count']
+        emoji_dir = "🔴"
+    else:
+        return
+
+    price = data['price']
+    s1 = data['s1']
+    r1 = data['r1']
+
+    prev = last_alert_sent.get(clean_symbol)
+    if prev:
+        if signal_type == "LONG" and price < prev['r1']:
+            return
+        elif signal_type == "SHORT" and price > prev['s1']:
+            return
+
+    last_alert_sent[clean_symbol] = {
+        "price": price,
+        "s1": s1,
+        "r1": r1,
+        "signal": signal_type
+    }
+    
+    display_symbol = clean_symbol.replace("_", "/")
+    percentage = count_val * 10
+    bar_str = "I" * count_val + "-" * (10 - count_val)
+    
+    action_label = "จุดเข้าซื้อ" if signal_type == "LONG" else "จุดเทขาย"
+    p_fmt = f"${price:,.4f}" if price < 1 else f"${price:,.2f}"
+    s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
+    r1_fmt = f"${r1:,.4f}" if r1 < 1 else f"${r1:,.2f}"
+
+    time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S")
+
+    msg = f"""🔥🔥🔥 <b>แจ้งเตือนด่วน</b> 🔥🔥🔥
+<b>สัญญาณ {signal_type} ({percentage}%) [{bar_str}]</b>
+<b>คู่เหรียญ: {display_symbol}</b>
+ราคาปัจจุบัน : {p_fmt}
+แนวต้าน : {r1_fmt}
+<b>{action_label} : {emoji_dir} {p_fmt}</b>
+แนวรับ : {s1_fmt}
+━━━━━━━━━━━━━━━━━━
+<b>🥇 กลุ่ม 1: เทรนด์ & โมเมนตัม</b>
+• EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
+• MACD : {data['macd']:.6f} {data['macd_dir']}
+• RSI : {data['rsi']:.2f} {data['rsi_dir']}
+
+<b>🥈 กลุ่ม 2: กรอบราคา & ความผันผวน</b>
+• Bollinger : {data['bb']:,.4f} {data['bb_dir']}
+• SAR : {data['sar']:,.4f} {data['sar_dir']}
+• Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
+
+<b>🥉 กลุ่ม 3: อินดิเคเตอร์เสริม</b>
+• CCI 20 : {data['cci']:.2f} {data['cci_dir']}
+• Williams %R : {data['willr']:.2f} {data['willr_dir']}
+• AO : {data['ao']:.4f} {data['ao_dir']}
+• Momentum : {data['mom']:.4f} {data['mom_dir']}
+━━━━━━━━━━━━━━━━━━
+📅 วันที่ : {time_str}"""
+    send_telegram(msg)
