@@ -22,6 +22,8 @@ TOP10_SYMBOLS = []
 MEME_SYMBOLS = []
 SYMBOLS = []
 
+show_tech_details = False
+
 bot_started = False
 lock = threading.Lock()
 
@@ -91,7 +93,7 @@ def send_telegram(message):
         print(f"[Telegram API Error]: {e}", file=sys.stderr, flush=True)
 
 def handle_telegram_commands():
-    global SYMBOLS, TOP10_SYMBOLS, MEME_SYMBOLS, last_update_id
+    global SYMBOLS, TOP10_SYMBOLS, MEME_SYMBOLS, show_tech_details, last_update_id
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_update_id + 1}&timeout=5"
     try:
         res = requests.get(url, timeout=10).json()
@@ -112,6 +114,7 @@ def handle_telegram_commands():
                                 "<b>📚 คู่มือการใช้งานเบื้องต้น:</b>\n"
                                 "• <b>/list</b> ดูรายชื่อคู่เหรียญเฝ้าระวัง\n"
                                 "• <b>/indicators</b> ดูรายชื่ออินดิเคเตอร์\n"
+                                "• <b>/tech</b> เปิด/ปิด การแสดงผลรายละเอียดอินดิเคเตอร์\n"
                                 "• <b>/help</b> ดูคู่มือทั้งหมด"
                             )
                         else:
@@ -144,11 +147,17 @@ def handle_telegram_commands():
                         )
                         send_telegram(ind_msg)
                         
+                    elif text == "/tech":
+                        show_tech_details = not show_tech_details
+                        status_str = "เปิด (ON)" if show_tech_details else "ปิด (OFF)"
+                        send_telegram(f"⚙️ สลับสถานะการแสดงผลรายละเอียดอินดิเคเตอร์: <b>{status_str}</b>")
+                        
                     elif text == "/help":
                         help_msg = (
                             "<b>📚 คู่มือใช้งานบอทเทรด MEXC</b>\n\n"
-                            "• <b>/list</b> ดูรายชื่อคู่เหรียญทั้งหมด (แบ่งกลุ่มอัตโนมัติ)\n"
+                            "• <b>/list</b> ดูรายชื่อคู่เหรียญทั้งหมด\n"
                             "• <b>/indicators</b> ดูรายชื่ออินดิเคเตอร์\n"
+                            "• <b>/tech</b> เปิด/ปิด การแสดงผลรายละเอียดอินดิเคเตอร์\n"
                             "• <b>/help</b> ดูคู่มือการใช้งาน"
                         )
                         send_telegram(help_msg)
@@ -284,6 +293,7 @@ def analyze_symbol_data(symbol, interval):
     }
 
 def check_instant_signal(symbol):
+    global show_tech_details
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
@@ -347,7 +357,10 @@ def check_instant_signal(symbol):
 ราคาปัจจุบัน : {p_fmt}
 แนวต้าน : {r1_fmt}
 <b>{action_label} : {emoji_dir} {p_fmt}</b>
-แนวรับ : {s1_fmt}
+แนวรับ : {s1_fmt}"""
+
+    if show_tech_details:
+        tech_part = f"""
 ━━━━━━━━━━━━━━━━━━
 <b>🥇 กลุ่ม 1: เทรนด์ & โมเมนตัม</b>
 • EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
@@ -363,9 +376,14 @@ def check_instant_signal(symbol):
 • CCI 20 : {data['cci']:.2f} {data['cci_dir']}
 • Williams %R : {data['willr']:.2f} {data['willr_dir']}
 • AO : {data['ao']:.4f} {data['ao_dir']}
-• Momentum : {data['mom']:.4f} {data['mom_dir']}
+• Momentum : {data['mom']:.4f} {data['mom_dir']}"""
+        msg += tech_part
+
+    footer_part = f"""
 ━━━━━━━━━━━━━━━━━━
 📅 วันที่ : {time_str}"""
+    msg += footer_part
+
     send_telegram(msg)
 
 def bot_loop():
