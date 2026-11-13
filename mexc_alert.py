@@ -21,9 +21,9 @@ CHAT_ID = "8876853259"
 MEME_KEYWORDS = ["DOGE", "SHIB", "PEPE", "FLOKI", "BONK", "TRUMP", "BOME", "NEIRO", "WIF", "PNUT", "GOAT", "MOODENG", "MEME", "CHILLGUY", "BTT", "BABYDOGE", "PORK", "SUNDOG"]
 
 # ตัวแปรเก็บรายชื่อเหรียญแบบไดนามิก
-TOP10_SYMBOLS = ["BTC_USDT", "ETH_USDT", "SOL_USDT", "XRP_USDT", "BNB_USDT", "ADA_USDT", "AVAX_USDT", "LINK_USDT", "SUI_USDT", "NEAR_USDT"]
-MEME_SYMBOLS = ["DOGE_USDT", "SHIB_USDT", "PEPE_USDT", "TRUMP_USDT", "FLOKI_USDT", "BONK_USDT"]
-SYMBOLS = TOP10_SYMBOLS + MEME_SYMBOLS
+TOP10_SYMBOLS = []
+MEME_SYMBOLS = []
+SYMBOLS = []
 
 bot_started = False
 lock = threading.Lock()
@@ -38,7 +38,7 @@ def normalize_symbol(symbol):
     return s
 
 def fetch_top_symbols_from_mexc():
-    """ดึงข้อมูล Top 10 Volume ทั่วไป และ Top 10 Meme Coins จาก MEXC API แบบอัตโนมัติ"""
+    """ดึงข้อมูล Top 10 Volume และ Top 10 Meme (ตัดเหรียญที่ซ้ำกับกลุ่มแรกออก) จาก MEXC API แบบอัตโนมัติ"""
     global TOP10_SYMBOLS, MEME_SYMBOLS, SYMBOLS
     try:
         url = "https://contract.mexc.com/api/v1/contract/ticker"
@@ -46,34 +46,45 @@ def fetch_top_symbols_from_mexc():
         if res.get("success") and "data" in res:
             tickers = res["data"]
             usdt_tickers = [t for t in tickers if t.get("symbol", "").endswith("_USDT")]
+            # เรียงลำดับจาก Volume สูงไปต่ำ (amount24 คือยอดเทรด USDT)
             usdt_tickers.sort(key=lambda x: float(x.get("amount24", 0) or 0), reverse=True)
             
             top_10 = []
-            meme_list = []
+            meme_candidates = []
             
             for t in usdt_tickers:
                 sym = t.get("symbol")
                 if not sym:
                     continue
                 
+                norm_sym = normalize_symbol(sym)
                 is_meme = any(kw in sym for kw in MEME_KEYWORDS)
                 
-                if is_meme:
-                    if len(meme_list) < 10:
-                        meme_list.append(sym)
-                else:
+                if not is_meme:
                     if len(top_10) < 10:
-                        top_10.append(sym)
+                        top_10.append(norm_sym)
+                else:
+                    meme_candidates.append(norm_sym)
                         
-                if len(top_10) >= 10 and len(meme_list) >= 10:
+                if len(top_10) >= 10 and len(meme_candidates) >= 30:
+                    break
+            
+            # กรองกลุ่มมีม: หากเหรียญมีมตัวไหนมีรายชื่อติดอยู่ในกลุ่มที่ 1 แล้ว ให้ตัดออกจากกลุ่มที่สอง
+            filtered_memes = []
+            for m in meme_candidates:
+                if m not in top_10:
+                    if m not in filtered_memes:
+                        filtered_memes.append(m)
+                if len(filtered_memes) >= 10:
                     break
             
             if top_10:
                 TOP10_SYMBOLS = top_10
-            if meme_list:
-                MEME_SYMBOLS = meme_list
+            if filtered_memes:
+                MEME_SYMBOLS = filtered_memes
+            
             SYMBOLS = list(set(TOP10_SYMBOLS + MEME_SYMBOLS))
-            print(f"[System] Auto-fetched Top 10 Volume & Meme Coins successfully!", file=sys.stdout, flush=True)
+            print(f"[System] Auto-fetched Top 10 Volume & Non-overlapping Meme Coins successfully!", file=sys.stdout, flush=True)
     except Exception as e:
         print(f"[API Error fetching top symbols]: {e}", file=sys.stderr, flush=True)
 
@@ -127,8 +138,8 @@ def handle_telegram_commands():
                         meme_str = ", ".join([s.replace('_', '/') for s in MEME_SYMBOLS])
                         list_msg = (
                             "📋 <b>รายชื่อคู่เหรียญเฝ้าระวังปัจจุบัน (ดึงอัปเดตอัตโนมัติ):</b>\n\n"
-                            f"<b>🥇 กลุ่ม 1 (Top 10 Volume - แจ้งเตือนเฉพาะ LONG):</b>\n• {top_str}\n\n"
-                            f"<b>🥈 กลุ่ม 2 (Meme Coins Volume สูง - แจ้งเตือน Long/Short):</b>\n• {meme_str}"
+                            f"<b>🥇 กลุ่ม 1 (Top 10 Volume - เฉพาะ LONG):</b>\n• {top_str}\n\n"
+                            f"<b>🥈 กลุ่ม 2 (Top 10 Meme Coins - Long/Short):</b>\n• {meme_str}"
                         )
                         send_telegram(list_msg)
                         
@@ -157,7 +168,7 @@ def handle_telegram_commands():
                             "<b>📚 คู่มือใช้งานบอทเทรด MEXC</b>\n\n"
                             "• <b>/add <คู่เหรียญ></b> (เช่น /add BTC_USDT) เพื่อเพิ่มคู่เหรียญ\n"
                             "• <b>/remove <คู่เหรียญ></b> (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญ\n"
-                            "• <b>/list</b> ดูรายชื่อคู่เหรียญทั้งหมด (แบ่งตามกลุ่ม)\n"
+                            "• <b>/list</b> ดูรายชื่อคู่เหรียญทั้งหมด (แบ่งกลุ่มอัตโนมัติ)\n"
                             "• <b>/indicators</b> ดูรายชื่ออินดิเคเตอร์\n"
                             "• <b>/help</b> ดูคู่มือการใช้งาน"
                         )
@@ -176,4 +187,105 @@ def fetch_mexc_kline(symbol, interval):
             data = res["data"]
             if "close" in data and len(data["close"]) > 0:
                 df = pd.DataFrame({
-                    "close":
+                    "close": [float(x) for x in data["close"]],
+                    "high": [float(x) for x in data["high"]],
+                    "low": [float(x) for x in data["low"]]
+                })
+                return df
+    except Exception as e:
+        print(f"[MEXC API Error - {symbol}]: {e}", file=sys.stderr, flush=True)
+    return None
+
+def analyze_symbol_data(symbol, interval):
+    df = fetch_mexc_kline(symbol, interval)
+    if df is None or len(df) < 35:
+        return None
+
+    df['RSI'] = ta.rsi(df['close'], length=14)
+    
+    stoch = ta.stoch(df['high'], df['low'], df['close'])
+    stoch_col = [c for c in stoch.columns if 'STOCHk' in c]
+    df['STOCH'] = stoch[stoch_col[0]] if stoch_col else 50.0
+    
+    bb = ta.bbands(df['close'], length=20)
+    bb_col = [c for c in bb.columns if 'BBM' in c]
+    df['BB_MID'] = bb[bb_col[0]] if bb_col else df['close']
+    
+    psar = ta.psar(df['high'], df['low'], df['close'])
+    psar_l_col = [c for c in psar.columns if 'PSARl' in c]
+    psar_s_col = [c for c in psar.columns if 'PSARs' in c]
+    df['PSAR_L'] = psar[psar_l_col[0]] if psar_l_col else np.nan
+    df['PSAR_S'] = psar[psar_s_col[0]] if psar_s_col else np.nan
+    
+    df['EMA'] = ta.ema(df['close'], length=20)
+    df['CCI'] = ta.cci(df['high'], df['low'], df['close'], length=20)
+    
+    macd = ta.macd(df['close'])
+    macd_h_col = [c for c in macd.columns if 'MACDh' in c]
+    df['MACD_H'] = macd[macd_h_col[0]] if macd_h_col else 0.0
+
+    willr = ta.willr(df['high'], df['low'], df['close'], length=14)
+    df['WILLR'] = willr if isinstance(willr, pd.Series) else -50.0
+
+    ao = ta.ao(df['high'], df['low'])
+    df['AO'] = ao if isinstance(ao, pd.Series) else 0.0
+
+    mom = ta.mom(df['close'], length=10)
+    df['MOM'] = mom if isinstance(mom, pd.Series) else 0.0
+
+    curr = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    pivot = (prev['high'] + prev['low'] + prev['close']) / 3
+    s1 = (2 * pivot) - prev['high']
+    r1 = (2 * pivot) - prev['low']
+    
+    price = curr['close']
+    rsi = curr['RSI'] if pd.notna(curr['RSI']) else 50.0
+    stoch_val = curr['STOCH'] if pd.notna(curr['STOCH']) else 50.0
+    bb_val = curr['BB_MID'] if pd.notna(curr['BB_MID']) else price
+    sar_l = curr['PSAR_L']
+    sar_s = curr['PSAR_S']
+    ema = curr['EMA'] if pd.notna(curr['EMA']) else price
+    cci = curr['CCI'] if pd.notna(curr['CCI']) else 0.0
+    macd_val = curr['MACD_H'] if pd.notna(curr['MACD_H']) else 0.0
+    willr_val = curr['WILLR'] if pd.notna(curr['WILLR']) else -50.0
+    ao_val = curr['AO'] if pd.notna(curr['AO']) else 0.0
+    mom_val = curr['MOM'] if pd.notna(curr['MOM']) else 0.0
+
+    up_count = 0
+    down_count = 0
+
+    def check_dir(is_up):
+        nonlocal up_count, down_count
+        if is_up:
+            up_count += 1
+            return "⬆️"
+        else:
+            down_count += 1
+            return "⬇️"
+
+    rsi_is_up = rsi > 50
+    rsi_dir = check_dir(rsi_is_up)
+    
+    stoch_dir = check_dir(stoch_val > 50)
+    bb_dir = check_dir(price > bb_val)
+    
+    if pd.notna(sar_l):
+        sar_val = sar_l
+        sar_dir = check_dir(True)
+    else:
+        sar_val = sar_s if pd.notna(sar_s) else price
+        sar_dir = check_dir(False)
+        
+    ema_is_up = price > ema
+    ema_dir = check_dir(ema_is_up)
+    
+    cci_dir = check_dir(cci > 0)
+    
+    macd_is_up = macd_val > 0
+    macd_dir = check_dir(macd_is_up)
+    
+    willr_dir = check_dir(willr_val > -50)
+    ao_dir = check_dir(ao_val > 0)
+    mom_dir = check_dir(mom_val
