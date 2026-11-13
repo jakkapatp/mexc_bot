@@ -6,7 +6,7 @@ import requests
 import pandas as pd
 import pandas_ta as ta
 import numpy as np
-from datetime import datetime
+from datetime import datetime, date
 from flask import Flask
 
 sys.stdout.reconfigure(line_buffering=True)
@@ -29,6 +29,9 @@ lock = threading.Lock()
 
 last_alert_sent = {}
 last_update_id = 0
+
+top10_daily_count = {}
+meme_last_alert_time = {}
 
 def normalize_symbol(symbol):
     s = symbol.strip().upper()
@@ -122,8 +125,8 @@ def handle_telegram_commands():
                             meme_str = ", ".join([s.replace('_', '/') for s in MEME_SYMBOLS]) if MEME_SYMBOLS else "รอประมวลผล..."
                             list_msg = (
                                 "📋 <b>รายชื่อคู่เหรียญเฝ้าระวังปัจจุบัน (ดึงอัตโนมัติ):</b>\n\n"
-                                f"<b>🥇 กลุ่ม 1 (Top 10 Volume - เฉพาะ LONG):</b>\n• {top_str}\n\n"
-                                f"<b>🥈 กลุ่ม 2 (Top 10 Meme Coins - Long/Short):</b>\n• {meme_str}"
+                                f"<b>🥇 กลุ่ม 1 (Top 10 Volume - แจ้งเตือนด่วน / หน่วง 10 นาที / จำกัด 6 ครั้ง):</b>\n• {top_str}\n\n"
+                                f"<b>🥈 กลุ่ม 2 (Top 10 Meme Coins - แจ้งเตือนทั่วไป / หน่วง 1 ชั่วโมง):</b>\n• {meme_str}"
                             )
                         send_telegram(list_msg)
                         
@@ -293,137 +296,19 @@ def analyze_symbol_data(symbol, interval):
     }
 
 def check_instant_signal(symbol):
-    global show_tech_details
+    global show_tech_details, top10_daily_count, meme_last_alert_time
     clean_symbol = normalize_symbol(symbol)
-    data = analyze_symbol_data(clean_symbol, "Week1")
-    if not data:
-        return
-
-    signal_type = None
-    count_val = 0
-    emoji_dir = ""
     
-    group1_long = data['rsi_is_up'] and data['ema_is_up'] and data['macd_is_up']
-    group1_short = (not data['rsi_is_up']) and (not data['ema_is_up']) and (not data['macd_is_up'])
-
     normalized_top10 = [normalize_symbol(s) for s in TOP10_SYMBOLS]
+    normalized_meme = [normalize_symbol(s) for s in MEME_SYMBOLS]
+    
     is_top10 = clean_symbol in normalized_top10
+    is_meme = clean_symbol in meme_last_alert_sent_check_key(clean_symbol) if False else clean_symbol in normalized_meme
 
-    if group1_long and data['up_count'] >= 7:
-        signal_type = "LONG"
-        count_val = data['up_count']
-        emoji_dir = "🟢"
-    elif group1_short and data['down_count'] >= 7:
-        if is_top10:
-            return
-        signal_type = "SHORT"
-        count_val = data['down_count']
-        emoji_dir = "🔴"
-    else:
-        return
+    current_date = date.today()
 
-    price = data['price']
-    s1 = data['s1']
-    r1 = data['r1']
-
-    prev = last_alert_sent.get(clean_symbol)
-    if prev:
-        if signal_type == "LONG" and price < prev['r1']:
-            return
-        elif signal_type == "SHORT" and price > prev['s1']:
-            return
-
-    last_alert_sent[clean_symbol] = {
-        "price": price,
-        "s1": s1,
-        "r1": r1,
-        "signal": signal_type
-    }
-    
-    display_symbol = clean_symbol.replace("_", "/")
-    percentage = count_val * 10
-    bar_str = "I" * count_val + "-" * (10 - count_val)
-    
-    action_label = "จุดเข้าซื้อ" if signal_type == "LONG" else "จุดเทขาย"
-    p_fmt = f"${price:,.4f}" if price < 1 else f"${price:,.2f}"
-    s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
-    r1_fmt = f"${r1:,.4f}" if r1 < 1 else f"${r1:,.2f}"
-
-    time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S")
-
-    msg = f"""🔥🔥🔥 <b>แจ้งเตือนด่วน</b> 🔥🔥🔥
-<b>สัญญาณ {signal_type} ({percentage}%) [{bar_str}]</b>
-<b>คู่เหรียญ: {display_symbol}</b>
-ราคาปัจจุบัน : {p_fmt}
-แนวต้าน : {r1_fmt}
-<b>{action_label} : {emoji_dir} {p_fmt}</b>
-แนวรับ : {s1_fmt}"""
-
-    if show_tech_details:
-        tech_part = f"""
-━━━━━━━━━━━━━━━━━━
-<b>🥇 กลุ่ม 1: เทรนด์ & โมเมนตัม</b>
-• EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
-• MACD : {data['macd']:.6f} {data['macd_dir']}
-• RSI : {data['rsi']:.2f} {data['rsi_dir']}
-
-<b>🥈 กลุ่ม 2: กรอบราคา & ความผันผวน</b>
-• Bollinger : {data['bb']:,.4f} {data['bb_dir']}
-• SAR : {data['sar']:,.4f} {data['sar_dir']}
-• Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
-
-<b>🥉 กลุ่ม 3: อินดิเคเตอร์เสริม</b>
-• CCI 20 : {data['cci']:.2f} {data['cci_dir']}
-• Williams %R : {data['willr']:.2f} {data['willr_dir']}
-• AO : {data['ao']:.4f} {data['ao_dir']}
-• Momentum : {data['mom']:.4f} {data['mom_dir']}"""
-        msg += tech_part
-
-    footer_part = f"""
-━━━━━━━━━━━━━━━━━━
-📅 วันที่ : {time_str}"""
-    msg += footer_part
-
-    send_telegram(msg)
-
-def bot_loop():
-    loop_count = 0
-    fetch_top_symbols_from_mexc()
-    
-    while True:
-        handle_telegram_commands()
-
-        if loop_count > 0 and loop_count % 120 == 0:
-            fetch_top_symbols_from_mexc()
-
-        if not SYMBOLS:
-            time.sleep(5)
-            loop_count += 1
-            continue
-
-        current_symbols = list(SYMBOLS)
-        for s in current_symbols:
-            check_instant_signal(s)
-            time.sleep(2)
-
-        loop_count += 1
-        time.sleep(30)
-
-def start_bot_thread():
-    global bot_started
-    with lock:
-        if not bot_started:
-            bot_started = True
-            threading.Thread(target=bot_loop, daemon=True).start()
-            print("[System] Real-time Bot Loop started successfully!", file=sys.stdout, flush=True)
-
-@app.route('/')
-def home():
-    start_bot_thread()
-    return "MEXC AI Analysis is Ready Now."
-
-start_bot_thread()
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
+    if is_top10:
+        if clean_symbol not in top10_daily_count:
+            top10_daily_count[clean_symbol] = {"date": current_date, "count": 0, "short_seen": False}
+        
+        record = top10
