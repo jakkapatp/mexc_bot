@@ -13,14 +13,11 @@ sys.stdout.reconfigure(line_buffering=True)
 
 app = Flask(__name__)
 
-# --- ข้อมูล Telegram & Trading ---
 TELEGRAM_TOKEN = "8389657702:AAGYbKxFBC-GD1_0MMCOvS5GQ2bg0pnRGg4"
 CHAT_ID = "8876853259"
 
-# รายชื่อคีย์เวิร์ดสำหรับคัดแยกเหรียญมีมยอดฮิต
 MEME_KEYWORDS = ["DOGE", "SHIB", "PEPE", "FLOKI", "BONK", "TRUMP", "BOME", "NEIRO", "WIF", "PNUT", "GOAT", "MOODENG", "MEME", "CHILLGUY", "BTT", "BABYDOGE", "PORK", "SUNDOG"]
 
-# ไม่กำหนดค่าเริ่มต้น ปล่อยว่างไว้รอ API ดึงสด
 TOP10_SYMBOLS = []
 MEME_SYMBOLS = []
 SYMBOLS = []
@@ -28,8 +25,8 @@ SYMBOLS = []
 bot_started = False
 lock = threading.Lock()
 
-last_alert_sent = {}      # {symbol: {"price": ..., "s1": ..., "r1": ..., "signal": ...}} สำหรับเทียบเงื่อนไขราคา
-last_update_id = 0        # สำหรับเช็คข้อความคำสั่งจาก Telegram
+last_alert_sent = {}
+last_update_id = 0
 
 def normalize_symbol(symbol):
     s = symbol.strip().upper()
@@ -38,7 +35,6 @@ def normalize_symbol(symbol):
     return s
 
 def fetch_top_symbols_from_mexc():
-    """ดึงข้อมูล Top 10 Volume และ Top 10 Meme (ตัดเหรียญที่ซ้ำกับกลุ่มแรกออก) จาก MEXC API แบบอัตโนมัติ"""
     global TOP10_SYMBOLS, MEME_SYMBOLS, SYMBOLS
     try:
         url = "https://contract.mexc.com/api/v1/contract/ticker"
@@ -46,7 +42,6 @@ def fetch_top_symbols_from_mexc():
         if res.get("success") and "data" in res:
             tickers = res["data"]
             usdt_tickers = [t for t in tickers if t.get("symbol", "").endswith("_USDT")]
-            # เรียงลำดับจาก Volume สูงไปต่ำ (amount24 คือยอดเทรด USDT)
             usdt_tickers.sort(key=lambda x: float(x.get("amount24", 0) or 0), reverse=True)
             
             top_10 = []
@@ -69,7 +64,6 @@ def fetch_top_symbols_from_mexc():
                 if len(top_10) >= 10 and len(meme_candidates) >= 30:
                     break
             
-            # กรองกลุ่มมีม: หากเหรียญมีมตัวไหนมีรายชื่อติดอยู่ในกลุ่มที่ 1 แล้ว ให้ตัดออกจากกลุ่มที่สอง
             filtered_memes = []
             for m in meme_candidates:
                 if m not in top_10:
@@ -97,7 +91,6 @@ def send_telegram(message):
         print(f"[Telegram API Error]: {e}", file=sys.stderr, flush=True)
 
 def handle_telegram_commands():
-    """ตรวจสอบและจัดการคำสั่งที่พิมพ์มาจาก Telegram แชทส่วนตัว"""
     global SYMBOLS, TOP10_SYMBOLS, MEME_SYMBOLS, last_update_id
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates?offset={last_update_id + 1}&timeout=5"
     try:
@@ -111,36 +104,13 @@ def handle_telegram_commands():
                 if chat_id == CHAT_ID:
                     text = message.get("text", "").strip()
                     
-                    if text.startswith("/add "):
-                        raw_sym = text.replace("/add", "").strip()
-                        clean_s = normalize_symbol(raw_sym)
-                        if clean_s not in SYMBOLS:
-                            SYMBOLS.append(clean_s)
-                            send_telegram(f"✅ เพิ่มคู่เหรียญ <b>{clean_s.replace('_', '/')}</b> เข้าสู่ระบบเรียบร้อยค่ะ!")
-                        else:
-                            send_telegram(f"ℹ️ คู่เหรียญ <b>{clean_s.replace('_', '/')}</b> มีอยู่ในรายการอยู่แล้วค่ะ")
-                            
-                    elif text.startswith("/remove "):
-                        raw_sym = text.replace("/remove", "").strip()
-                        clean_s = normalize_symbol(raw_sym)
-                        if clean_s in TOP10_SYMBOLS:
-                            TOP10_SYMBOLS.remove(clean_s)
-                        if clean_s in MEME_SYMBOLS:
-                            MEME_SYMBOLS.remove(clean_s)
-                        if clean_s in SYMBOLS:
-                            SYMBOLS.remove(clean_s)
-                            send_telegram(f"🗑️ ลบคู่เหรียญ <b>{clean_s.replace('_', '/')}</b> เรียบร้อยค่ะ!")
-                        else:
-                            send_telegram(f"❌ ไม่พบเหรียญ <b>{clean_s.replace('_', '/')}</b> ในรายการเฝ้าระวังค่ะ")
-                            
-                    elif text == "/list":
+                    if text == "/list":
                         if not TOP10_SYMBOLS and not MEME_SYMBOLS:
                             list_msg = (
                                 "⏳ <b>รอประมวลผล...</b>\n"
                                 "<i>(ระบบกำลังดึงข้อมูล Top Volume และ Meme Coins จาก MEXC API)</i>\n\n"
                                 "<b>📚 คู่มือการใช้งานเบื้องต้น:</b>\n"
-                                "• <b>/add <คู่เหรียญ></b> เพื่อเพิ่มเหรียญ\n"
-                                "• <b>/remove <คู่เหรียญ></b> เพื่อลบเหรียญ\n"
+                                "• <b>/list</b> ดูรายชื่อคู่เหรียญเฝ้าระวัง\n"
                                 "• <b>/indicators</b> ดูรายชื่ออินดิเคเตอร์\n"
                                 "• <b>/help</b> ดูคู่มือทั้งหมด"
                             )
@@ -177,8 +147,6 @@ def handle_telegram_commands():
                     elif text == "/help":
                         help_msg = (
                             "<b>📚 คู่มือใช้งานบอทเทรด MEXC</b>\n\n"
-                            "• <b>/add <คู่เหรียญ></b> (เช่น /add BTC_USDT) เพื่อเพิ่มคู่เหรียญ\n"
-                            "• <b>/remove <คู่เหรียญ></b> (เช่น /remove DOGE_USDT) เพื่อลบคู่เหรียญ\n"
                             "• <b>/list</b> ดูรายชื่อคู่เหรียญทั้งหมด (แบ่งกลุ่มอัตโนมัติ)\n"
                             "• <b>/indicators</b> ดูรายชื่ออินดิเคเตอร์\n"
                             "• <b>/help</b> ดูคู่มือการใช้งาน"
@@ -189,7 +157,6 @@ def handle_telegram_commands():
         print(f"[Command Error]: {e}", file=sys.stderr, flush=True)
 
 def fetch_mexc_kline(symbol, interval):
-    """ดึงข้อมูลกราฟจาก MEXC API โดยใช้รูปแบบมาตรฐาน (มีขีดล่าง เช่น ETH_USDT)"""
     try:
         clean_symbol = normalize_symbol(symbol)
         url = f"https://contract.mexc.com/api/v1/contract/kline/{clean_symbol}?interval={interval}"
@@ -317,7 +284,6 @@ def analyze_symbol_data(symbol, interval):
     }
 
 def check_instant_signal(symbol):
-    """แจ้งเตือนด่วน: Top 10 Volume บล็อก SHORT อย่างเด็ดขาด"""
     clean_symbol = normalize_symbol(symbol)
     data = analyze_symbol_data(clean_symbol, "Week1")
     if not data:
@@ -339,7 +305,7 @@ def check_instant_signal(symbol):
         emoji_dir = "🟢"
     elif group1_short and data['down_count'] >= 7:
         if is_top10:
-            return  # บล็อกห้ามเตือน SHORT สำหรับกลุ่ม Top 10 Volume
+            return
         signal_type = "SHORT"
         count_val = data['down_count']
         emoji_dir = "🔴"
@@ -409,7 +375,7 @@ def bot_loop():
     while True:
         handle_telegram_commands()
 
-        if loop_count > 0 and loop_count % 120 == 0:  # อัปเดตรายชื่อทุกๆ 1 ชั่วโมง
+        if loop_count > 0 and loop_count % 120 == 0:
             fetch_top_symbols_from_mexc()
 
         if not SYMBOLS:
@@ -436,7 +402,7 @@ def start_bot_thread():
 @app.route('/')
 def home():
     start_bot_thread()
-    return "MEXC AI Bot Analysis!"
+    return "MEXC AI Analysis is Ready Now."
 
 start_bot_thread()
 
