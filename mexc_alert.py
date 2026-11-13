@@ -20,7 +20,7 @@ CHAT_ID = "8876853259"
 # รายชื่อคีย์เวิร์ดสำหรับคัดแยกเหรียญมีมยอดฮิต
 MEME_KEYWORDS = ["DOGE", "SHIB", "PEPE", "FLOKI", "BONK", "TRUMP", "BOME", "NEIRO", "WIF", "PNUT", "GOAT", "MOODENG", "MEME", "CHILLGUY", "BTT", "BABYDOGE", "PORK", "SUNDOG"]
 
-# ไม่กำหนดค่าเริ่มต้น (ปล่อยว่างไว้ รอ API ดึงสด)
+# ไม่กำหนดค่าเริ่มต้น ปล่อยว่างไว้รอ API ดึงสด
 TOP10_SYMBOLS = []
 MEME_SYMBOLS = []
 SYMBOLS = []
@@ -46,6 +46,7 @@ def fetch_top_symbols_from_mexc():
         if res.get("success") and "data" in res:
             tickers = res["data"]
             usdt_tickers = [t for t in tickers if t.get("symbol", "").endswith("_USDT")]
+            # เรียงลำดับจาก Volume สูงไปต่ำ (amount24 คือยอดเทรด USDT)
             usdt_tickers.sort(key=lambda x: float(x.get("amount24", 0) or 0), reverse=True)
             
             top_10 = []
@@ -68,6 +69,7 @@ def fetch_top_symbols_from_mexc():
                 if len(top_10) >= 10 and len(meme_candidates) >= 30:
                     break
             
+            # กรองกลุ่มมีม: หากเหรียญมีมตัวไหนมีรายชื่อติดอยู่ในกลุ่มที่ 1 แล้ว ให้ตัดออกจากกลุ่มที่สอง
             filtered_memes = []
             for m in meme_candidates:
                 if m not in top_10:
@@ -214,4 +216,231 @@ def analyze_symbol_data(symbol, interval):
     
     stoch = ta.stoch(df['high'], df['low'], df['close'])
     stoch_col = [c for c in stoch.columns if 'STOCHk' in c]
-    df['STOCH'] = stoch[st
+    df['STOCH'] = stoch[stoch_col[0]] if stoch_col else 50.0
+    
+    bb = ta.bbands(df['close'], length=20)
+    bb_col = [c for c in bb.columns if 'BBM' in c]
+    df['BB_MID'] = bb[bb_col[0]] if bb_col else df['close']
+    
+    psar = ta.psar(df['high'], df['low'], df['close'])
+    psar_l_col = [c for c in psar.columns if 'PSARl' in c]
+    psar_s_col = [c for c in psar.columns if 'PSARs' in c]
+    df['PSAR_L'] = psar[psar_l_col[0]] if psar_l_col else np.nan
+    df['PSAR_S'] = psar[psar_s_col[0]] if psar_s_col else np.nan
+    
+    df['EMA'] = ta.ema(df['close'], length=20)
+    df['CCI'] = ta.cci(df['high'], df['low'], df['close'], length=20)
+    
+    macd = ta.macd(df['close'])
+    macd_h_col = [c for c in macd.columns if 'MACDh' in c]
+    df['MACD_H'] = macd[macd_h_col[0]] if macd_h_col else 0.0
+
+    willr = ta.willr(df['high'], df['low'], df['close'], length=14)
+    df['WILLR'] = willr if isinstance(willr, pd.Series) else -50.0
+
+    ao = ta.ao(df['high'], df['low'])
+    df['AO'] = ao if isinstance(ao, pd.Series) else 0.0
+
+    mom = ta.mom(df['close'], length=10)
+    df['MOM'] = mom if isinstance(mom, pd.Series) else 0.0
+
+    curr = df.iloc[-1]
+    prev = df.iloc[-2]
+
+    pivot = (prev['high'] + prev['low'] + prev['close']) / 3
+    s1 = (2 * pivot) - prev['high']
+    r1 = (2 * pivot) - prev['low']
+    
+    price = curr['close']
+    rsi = curr['RSI'] if pd.notna(curr['RSI']) else 50.0
+    stoch_val = curr['STOCH'] if pd.notna(curr['STOCH']) else 50.0
+    bb_val = curr['BB_MID'] if pd.notna(curr['BB_MID']) else price
+    sar_l = curr['PSAR_L']
+    sar_s = curr['PSAR_S']
+    ema = curr['EMA'] if pd.notna(curr['EMA']) else price
+    cci = curr['CCI'] if pd.notna(curr['CCI']) else 0.0
+    macd_val = curr['MACD_H'] if pd.notna(curr['MACD_H']) else 0.0
+    willr_val = curr['WILLR'] if pd.notna(curr['WILLR']) else -50.0
+    ao_val = curr['AO'] if pd.notna(curr['AO']) else 0.0
+    mom_val = curr['MOM'] if pd.notna(curr['MOM']) else 0.0
+
+    up_count = 0
+    down_count = 0
+
+    def check_dir(is_up):
+        nonlocal up_count, down_count
+        if is_up:
+            up_count += 1
+            return "⬆️"
+        else:
+            down_count += 1
+            return "⬇️"
+
+    rsi_is_up = rsi > 50
+    rsi_dir = check_dir(rsi_is_up)
+    
+    stoch_dir = check_dir(stoch_val > 50)
+    bb_dir = check_dir(price > bb_val)
+    
+    if pd.notna(sar_l):
+        sar_val = sar_l
+        sar_dir = check_dir(True)
+    else:
+        sar_val = sar_s if pd.notna(sar_s) else price
+        sar_dir = check_dir(False)
+        
+    ema_is_up = price > ema
+    ema_dir = check_dir(ema_is_up)
+    
+    cci_dir = check_dir(cci > 0)
+    
+    macd_is_up = macd_val > 0
+    macd_dir = check_dir(macd_is_up)
+    
+    willr_dir = check_dir(willr_val > -50)
+    ao_dir = check_dir(ao_val > 0)
+    mom_dir = check_dir(mom_val > 0)
+
+    return {
+        "price": price, "s1": s1, "r1": r1,
+        "rsi": rsi, "rsi_dir": rsi_dir, "rsi_is_up": rsi_is_up,
+        "stoch": stoch_val, "stoch_dir": stoch_dir,
+        "bb": bb_val, "bb_dir": bb_dir,
+        "sar": sar_val, "sar_dir": sar_dir,
+        "ema": ema, "ema_dir": ema_dir, "ema_is_up": ema_is_up,
+        "cci": cci, "cci_dir": cci_dir,
+        "macd": macd_val, "macd_dir": macd_dir, "macd_is_up": macd_is_up,
+        "willr": willr_val, "willr_dir": willr_dir,
+        "ao": ao_val, "ao_dir": ao_dir,
+        "mom": mom_val, "mom_dir": mom_dir,
+        "up_count": up_count, "down_count": down_count
+    }
+
+def check_instant_signal(symbol):
+    """แจ้งเตือนด่วน: Top 10 Volume บล็อก SHORT อย่างเด็ดขาด"""
+    clean_symbol = normalize_symbol(symbol)
+    data = analyze_symbol_data(clean_symbol, "Week1")
+    if not data:
+        return
+
+    signal_type = None
+    count_val = 0
+    emoji_dir = ""
+    
+    group1_long = data['rsi_is_up'] and data['ema_is_up'] and data['macd_is_up']
+    group1_short = (not data['rsi_is_up']) and (not data['ema_is_up']) and (not data['macd_is_up'])
+
+    normalized_top10 = [normalize_symbol(s) for s in TOP10_SYMBOLS]
+    is_top10 = clean_symbol in normalized_top10
+
+    if group1_long and data['up_count'] >= 7:
+        signal_type = "LONG"
+        count_val = data['up_count']
+        emoji_dir = "🟢"
+    elif group1_short and data['down_count'] >= 7:
+        if is_top10:
+            return  # บล็อกห้ามเตือน SHORT สำหรับกลุ่ม Top 10 Volume
+        signal_type = "SHORT"
+        count_val = data['down_count']
+        emoji_dir = "🔴"
+    else:
+        return
+
+    price = data['price']
+    s1 = data['s1']
+    r1 = data['r1']
+
+    prev = last_alert_sent.get(clean_symbol)
+    if prev:
+        if signal_type == "LONG" and price < prev['r1']:
+            return
+        elif signal_type == "SHORT" and price > prev['s1']:
+            return
+
+    last_alert_sent[clean_symbol] = {
+        "price": price,
+        "s1": s1,
+        "r1": r1,
+        "signal": signal_type
+    }
+    
+    display_symbol = clean_symbol.replace("_", "/")
+    percentage = count_val * 10
+    bar_str = "I" * count_val + "-" * (10 - count_val)
+    
+    action_label = "จุดเข้าซื้อ" if signal_type == "LONG" else "จุดเทขาย"
+    p_fmt = f"${price:,.4f}" if price < 1 else f"${price:,.2f}"
+    s1_fmt = f"${s1:,.4f}" if s1 < 1 else f"${s1:,.2f}"
+    r1_fmt = f"${r1:,.4f}" if r1 < 1 else f"${r1:,.2f}"
+
+    time_str = datetime.now().strftime("%d/%m/%Y เวลา : %H:%M:%S")
+
+    msg = f"""🔥🔥🔥 <b>แจ้งเตือนด่วน</b> 🔥🔥🔥
+<b>สัญญาณ {signal_type} ({percentage}%) [{bar_str}]</b>
+<b>คู่เหรียญ: {display_symbol}</b>
+ราคาปัจจุบัน : {p_fmt}
+แนวต้าน : {r1_fmt}
+<b>{action_label} : {emoji_dir} {p_fmt}</b>
+แนวรับ : {s1_fmt}
+━━━━━━━━━━━━━━━━━━
+<b>🥇 กลุ่ม 1: เทรนด์ & โมเมนตัม</b>
+• EMA 20 : {data['ema']:,.4f} {data['ema_dir']}
+• MACD : {data['macd']:.6f} {data['macd_dir']}
+• RSI : {data['rsi']:.2f} {data['rsi_dir']}
+
+<b>🥈 กลุ่ม 2: กรอบราคา & ความผันผวน</b>
+• Bollinger : {data['bb']:,.4f} {data['bb_dir']}
+• SAR : {data['sar']:,.4f} {data['sar_dir']}
+• Stochastic : {data['stoch']:.2f} {data['stoch_dir']}
+
+<b>🥉 กลุ่ม 3: อินดิเคเตอร์เสริม</b>
+• CCI 20 : {data['cci']:.2f} {data['cci_dir']}
+• Williams %R : {data['willr']:.2f} {data['willr_dir']}
+• AO : {data['ao']:.4f} {data['ao_dir']}
+• Momentum : {data['mom']:.4f} {data['mom_dir']}
+━━━━━━━━━━━━━━━━━━
+📅 วันที่ : {time_str}"""
+    send_telegram(msg)
+
+def bot_loop():
+    loop_count = 0
+    # ดึงข้อมูลทันทีเมื่อเริ่มลูปแรก
+    fetch_top_symbols_from_mexc()
+    
+    while True:
+        handle_telegram_commands()
+
+        if loop_count > 0 and loop_count % 120 == 0:  # อัปเดตรายชื่อทุกๆ 1 ชั่วโมง
+            fetch_top_symbols_from_mexc()
+
+        if not SYMBOLS:
+            time.sleep(5)
+            loop_count += 1
+            continue
+
+        current_symbols = list(SYMBOLS)
+        for s in current_symbols:
+            check_instant_signal(s)
+            time.sleep(2)
+
+        loop_count += 1
+        time.sleep(30)
+
+def start_bot_thread():
+    global bot_started
+    with lock:
+        if not bot_started:
+            bot_started = True
+            threading.Thread(target=bot_loop, daemon=True).start()
+            print("[System] Real-time Bot Loop started successfully!", file=sys.stdout, flush=True)
+
+@app.route('/')
+def home():
+    start_bot_thread()
+    return "MEXC Bot is running 24/7 with dynamic fetching and no default fallback!"
+
+start_bot_thread()
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
