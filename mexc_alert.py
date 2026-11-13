@@ -404,7 +404,6 @@ def check_instant_signal(symbol):
 
 def bot_loop():
     loop_count = 0
-    # ดึงข้อมูลทันทีเมื่อเริ่มลูปแรก
     fetch_top_symbols_from_mexc()
     
     while True:
