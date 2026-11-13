@@ -436,7 +436,7 @@ def start_bot_thread():
 @app.route('/')
 def home():
     start_bot_thread()
-    return "MEXC Bot is running 24/7 with dynamic fetching and no default fallback!"
+    return "MEXC AI Bot Analysis!"
 
 start_bot_thread()
 
